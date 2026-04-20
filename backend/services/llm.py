@@ -97,45 +97,69 @@ class GeminiProvider(LLMProvider):
         return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
 
     async def generate_text(self, prompt: str, system: Optional[str] = None) -> AsyncIterator[str]:
+        import asyncio
         parts = [{"text": prompt}]
         body: dict = {"contents": [{"role": "user", "parts": parts}]}
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}
-        yielded_any = False
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", self._endpoint(self.text_model), json=body) as r:
-                if r.status_code != 200:
-                    err_text = (await r.aread()).decode("utf-8", errors="ignore")
-                    raise RuntimeError(f"Gemini {r.status_code}: {err_text[:500]}")
-                async for raw in r.aiter_lines():
-                    if not raw:
-                        continue
-                    if not raw.startswith("data:"):
-                        continue
-                    data = raw[5:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except Exception:
-                        continue
-                    for cand in chunk.get("candidates", []):
+
+        # 429/5xx 재시도 with 지수 백오프 (최대 3회: 8s, 20s, 40s)
+        backoffs = [8, 20, 40]
+        last_err: str = ""
+        for attempt in range(len(backoffs) + 1):
+            yielded_any = False
+            try:
+                async with httpx.AsyncClient(timeout=None) as client:
+                    async with client.stream("POST", self._endpoint(self.text_model), json=body) as r:
+                        if r.status_code == 429:
+                            last_err = f"429 Rate Limit (attempt {attempt + 1})"
+                            raise RuntimeError(last_err)
+                        if r.status_code >= 500:
+                            last_err = f"{r.status_code} (attempt {attempt + 1})"
+                            raise RuntimeError(last_err)
+                        if r.status_code != 200:
+                            err_text = (await r.aread()).decode("utf-8", errors="ignore")
+                            raise RuntimeError(f"Gemini {r.status_code}: {err_text[:500]}")
+                        async for raw in r.aiter_lines():
+                            if not raw or not raw.startswith("data:"):
+                                continue
+                            data = raw[5:].strip()
+                            if data == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data)
+                            except Exception:
+                                continue
+                            for cand in chunk.get("candidates", []):
+                                for p in cand.get("content", {}).get("parts", []):
+                                    t = p.get("text")
+                                    if t:
+                                        yielded_any = True
+                                        yield t
+                if yielded_any:
+                    return
+                # 스트리밍에서 0개 yield → 단회 폴백 시도
+                async with httpx.AsyncClient(timeout=300) as client:
+                    r = await client.post(self._endpoint_sync(self.text_model), json=body)
+                    if r.status_code == 429:
+                        last_err = f"429 Rate Limit on fallback (attempt {attempt + 1})"
+                        raise RuntimeError(last_err)
+                    r.raise_for_status()
+                    data = r.json()
+                    for cand in data.get("candidates", []):
                         for p in cand.get("content", {}).get("parts", []):
                             t = p.get("text")
                             if t:
-                                yielded_any = True
                                 yield t
-        if not yielded_any:
-            # 스트리밍 실패 폴백: 단회 호출로 재시도
-            async with httpx.AsyncClient(timeout=300) as client:
-                r = await client.post(self._endpoint_sync(self.text_model), json=body)
-                r.raise_for_status()
-                data = r.json()
-                for cand in data.get("candidates", []):
-                    for p in cand.get("content", {}).get("parts", []):
-                        t = p.get("text")
-                        if t:
-                            yield t
+                return
+            except Exception as e:
+                msg = str(e)
+                is_retryable = "429" in msg or "500" in msg or "503" in msg
+                if not is_retryable or attempt >= len(backoffs):
+                    raise
+                wait = backoffs[attempt]
+                await asyncio.sleep(wait)
+        raise RuntimeError(f"Gemini 모든 재시도 실패: {last_err}")
 
     async def generate_vision(self, image_paths: Iterable[str], prompt: str, system: Optional[str] = None) -> str:
         parts: list[dict] = [{"text": prompt}]
