@@ -79,10 +79,24 @@ class Section:
     body_indices: list[int] = field(default_factory=list)
 
 
+TABLE_LOCALNAMES = {"tbl", "tc", "cellzonelist"}
+
+
+def _is_inside_table(p_elem: etree._Element) -> bool:
+    """단락이 <hp:tbl>/<hp:tc> 등 표 구조 안에 있는지 확인."""
+    parent = p_elem.getparent()
+    while parent is not None:
+        if etree.QName(parent).localname in TABLE_LOCALNAMES:
+            return True
+        parent = parent.getparent()
+    return False
+
+
 def parse_sections(section_xml_path: Path) -> tuple[etree._ElementTree, list[etree._Element], list[Section]]:
     tree = etree.parse(str(section_xml_path))
     root = tree.getroot()
-    paragraphs = root.xpath(".//hp:p", namespaces=NS)
+    # 표 내부 단락 제외 (표 구조 보존)
+    paragraphs = [p for p in root.xpath(".//hp:p", namespaces=NS) if not _is_inside_table(p)]
 
     sections: list[Section] = []
     current: Optional[Section] = None
