@@ -7,7 +7,12 @@ from typing import AsyncIterator
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hwp_mcp.hwpx_vision.lib.vision_prompt import COMPOSER_SYSTEM, composer_user_prompt
+from hwp_mcp.hwpx_vision.lib.vision_prompt import (
+    COMPOSER_SYSTEM,
+    TEMPLATE_COMPOSER_SYSTEM,
+    composer_user_prompt,
+    template_composer_user_prompt,
+)
 
 from .llm import get_provider
 
@@ -31,4 +36,22 @@ async def compose_report(plan_md: str, workplan_md: str, wrapup_md: str) -> Asyn
     )
     provider = get_provider()
     async for chunk in provider.generate_text(prompt, system=COMPOSER_SYSTEM):
+        yield chunk
+
+
+async def compose_with_template_headings(
+    template_headings: list[dict],
+    plan_md: str,
+    workplan_md: str,
+    wrapup_md: str,
+) -> AsyncIterator[str]:
+    per = MAX_CONTEXT_CHARS // 3
+    prompt = template_composer_user_prompt(
+        template_headings,
+        _truncate(plan_md, per),
+        _truncate(workplan_md, per),
+        _truncate(wrapup_md, per),
+    )
+    provider = get_provider()
+    async for chunk in provider.generate_text(prompt, system=TEMPLATE_COMPOSER_SYSTEM):
         yield chunk

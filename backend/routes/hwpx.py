@@ -11,11 +11,13 @@ from fastapi.responses import StreamingResponse
 from backend.services.mcp_bridge import call_analyze_style, call_apply_style
 from backend.services.renderer import render
 from backend.services.section_composer import compose_section
+from backend.services.composer import compose_with_template_headings
 
 import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from hwp_mcp.hwpx_vision.tools.template_inject import list_headings, inject_to_template
+from hwp_mcp.hwpx_vision.lib.md_sections import parse_md_sections, match_to_template_headings
 
 
 router = APIRouter(prefix="/api", tags=["hwpx"])
@@ -92,6 +94,101 @@ async def template_inject(body: TemplateInjectBody):
             yield f"event: error\ndata: {type(e).__name__}: {e}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+class DraftMdBody(BaseModel):
+    template_hwpx: str
+    output_md: str
+    plan_md: str
+    workplan_md: str
+    wrapup_md: str
+
+
+@router.post("/template/draft-md")
+async def template_draft_md(body: DraftMdBody):
+    """
+    템플릿 HWPX의 헤딩 구조를 가져와 3개 MD와 합성 → 완성형 MD 1개를 생성.
+    사용자 검수용. LLM 1회 호출.
+    """
+    if not Path(body.template_hwpx).exists():
+        raise HTTPException(404, "템플릿 없음")
+    plan_text = Path(body.plan_md).read_text(encoding="utf-8")
+    workplan_text = Path(body.workplan_md).read_text(encoding="utf-8")
+    wrapup_text = Path(body.wrapup_md).read_text(encoding="utf-8")
+
+    try:
+        headings = list_headings(body.template_hwpx)
+    except Exception as e:
+        raise HTTPException(500, f"헤딩 추출 실패: {e}")
+
+    seen: set[str] = set()
+    filtered: list[dict] = []
+    for h in headings:
+        if h["body_paragraphs"] < 3:
+            continue
+        if h["heading"] in seen:
+            continue
+        seen.add(h["heading"])
+        filtered.append(h)
+
+    out = Path(body.output_md)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    async def stream():
+        collected: list[str] = []
+        try:
+            yield f"event: start\ndata: {len(filtered)}\n\n"
+            async for chunk in compose_with_template_headings(filtered, plan_text, workplan_text, wrapup_text):
+                collected.append(chunk)
+                safe = chunk.replace("\r", "").replace("\n", "\\n")
+                yield f"data: {safe}\n\n"
+            out.write_text("".join(collected), encoding="utf-8")
+            yield f"event: done\ndata: {out}\n\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"event: error\ndata: {type(e).__name__}: {e}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+class InjectFromMdBody(BaseModel):
+    template_hwpx: str
+    md_path: str
+    output_hwpx: str
+
+
+@router.post("/template/inject-from-md")
+def template_inject_from_md(body: InjectFromMdBody) -> dict[str, Any]:
+    """
+    이미 작성된 MD를 템플릿 헤딩에 매칭해 주입. LLM 호출 없음.
+    """
+    if not Path(body.template_hwpx).exists():
+        raise HTTPException(404, "템플릿 없음")
+    if not Path(body.md_path).exists():
+        raise HTTPException(404, "MD 없음")
+
+    md_text = Path(body.md_path).read_text(encoding="utf-8")
+    md_sections = parse_md_sections(md_text)
+
+    try:
+        headings = list_headings(body.template_hwpx)
+    except Exception as e:
+        raise HTTPException(500, f"헤딩 추출 실패: {e}")
+
+    template_heading_texts = [h["heading"] for h in headings if h["body_paragraphs"] >= 3]
+    section_map = match_to_template_headings(md_sections, template_heading_texts)
+
+    if not section_map:
+        raise HTTPException(400, f"MD 헤딩({len(md_sections)})과 템플릿 헤딩({len(template_heading_texts)}) 매칭 실패")
+
+    try:
+        result = inject_to_template(body.template_hwpx, section_map, body.output_hwpx)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"주입 실패: {e}")
+    return {**result, "matched_sections": list(section_map.keys()), "md_sections_total": len(md_sections)}
 
 
 class AnalyzeBody(BaseModel):

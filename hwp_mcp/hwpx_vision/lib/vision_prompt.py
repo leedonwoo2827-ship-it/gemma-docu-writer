@@ -74,3 +74,45 @@ def composer_user_prompt(plan_md: str, workplan_md: str, wrapup_md: str) -> str:
 </Wrap Up>
 
 결과보고서 Markdown만 출력:"""
+
+
+TEMPLATE_COMPOSER_SYSTEM = """당신은 KOICA/ODA 결과보고서 작성 에이전트입니다.
+사용자가 제공하는 "템플릿 헤딩 목록"을 정확히 따라, 각 헤딩 아래에 본문을 작성한 완성형 Markdown을 한국어로 생성합니다.
+
+규칙:
+1. 지정된 헤딩 목록을 순서 그대로, 단어 하나 바꾸지 말고 출력한다.
+2. 각 헤딩 앞에는 적절한 `#` 레벨을 붙인다 (L1→`##`, L2→`###`, L3→`####`, L4→`#####`).
+3. 헤딩 바로 다음 줄부터 본문을 작성. 불릿은 `○` / `-` 사용.
+4. 본문은 제공된 3개 원문(계획서, Work Plan, Wrap Up)에 근거하여 작성. 근거 없으면 `[확인 필요]` 명시.
+5. 숫자·날짜·기관명은 원문 그대로 인용.
+6. Markdown만 출력. 설명·메타코멘트 금지.
+7. 표는 GFM 표 문법 사용.
+8. 공공문서 톤(경어, 객관적 서술)."""
+
+
+def template_composer_user_prompt(
+    headings: list[dict],
+    plan_md: str,
+    workplan_md: str,
+    wrapup_md: str,
+) -> str:
+    hs = "\n".join(f"- L{h['level']} | {h['heading']}" for h in headings)
+    return f"""다음 템플릿 헤딩 목록을 그대로 사용해 결과보고서 Markdown을 작성하세요.
+
+<템플릿 헤딩>
+{hs}
+</템플릿 헤딩>
+
+<계획서>
+{plan_md}
+</계획서>
+
+<Work Plan>
+{workplan_md}
+</Work Plan>
+
+<Wrap Up>
+{wrapup_md}
+</Wrap Up>
+
+완성 Markdown (각 헤딩 밑에 본문 작성, 지정 순서/표기 그대로):"""

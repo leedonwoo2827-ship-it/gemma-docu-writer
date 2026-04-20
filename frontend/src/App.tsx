@@ -7,7 +7,7 @@ import RightSidebar from "./components/RightSidebar";
 import MdDropZone from "./components/MdDropZone";
 import DirectConvertBar from "./components/DirectConvertBar";
 import MdList from "./components/MdList";
-import { api, composeSSE, templateInjectSSE, FileNode } from "./api";
+import { api, composeSSE, templateInjectSSE, draftMdSSE, FileNode } from "./api";
 
 const DEFAULT_ROOT = "_context";
 
@@ -158,13 +158,9 @@ export default function App() {
     );
   };
 
-  const runTemplateInject = async () => {
-    if (!styleRef) {
-      log("템플릿이 지정되지 않았습니다. HWPX 파일을 우클릭 → '템플릿으로 지정'");
-      return;
-    }
-    if (!styleRef.toLowerCase().endsWith(".hwpx")) {
-      log(`템플릿은 HWPX여야 합니다 (현재: ${styleRef}). 파일 4를 한/글에서 .hwpx로 저장해 주세요.`);
+  const runDraftMd = async () => {
+    if (!styleRef || !styleRef.toLowerCase().endsWith(".hwpx")) {
+      log("템플릿 HWPX를 먼저 지정하세요 (파일 우클릭 → '템플릿으로 지정').");
       return;
     }
     const mds = effectiveMdSelection();
@@ -174,12 +170,91 @@ export default function App() {
     }
     const [plan, workplan, wrapup] = mds;
     const ts = timestamp();
-    const outName = `4. [국문] 결과보고서_템플릿적용_v1.0_${ts}.hwpx`;
+    const outName = `4. [국문] 결과보고서_템플릿초안_${ts}.md`;
     const outPath = `${workDir}/${outName}`.replace(/\\/g, "/");
 
-    log(`템플릿 주입 시작: ${styleRef}`);
+    log(`템플릿 기반 MD 초안 생성 시작: ${styleRef}`);
     setStreamBuf("");
-    beginBusy("템플릿 주입 (섹션별 LLM + HWPX 교체)");
+    beginBusy("템플릿 초안 MD 생성 (LLM)");
+    draftMdSSE(
+      {
+        template_hwpx: styleRef,
+        output_md: outPath,
+        plan_md: plan,
+        workplan_md: workplan,
+        wrapup_md: wrapup,
+      },
+      (n) => log(`템플릿 헤딩 ${n}개 기반으로 작성`),
+      (chunk) => {
+        setStreamBuf((b) => b + chunk);
+        setChunkCount((c) => c + 1);
+      },
+      (outPathDone) => {
+        log(`초안 MD 완료: ${outPathDone} — 검수 후 'MD → HWPX' 클릭`);
+        addResult(outPathDone, "결과보고서 초안 MD (검수 필요)");
+        setRefreshKey((k) => k + 1);
+        setSelected(outPathDone);
+        setSelectedExt(".md");
+        setStreamBuf("");
+        endBusy();
+      },
+      (err) => {
+        log(`초안 생성 실패: ${err}`);
+        endBusy();
+      }
+    );
+  };
+
+  const runInjectFromMd = async () => {
+    if (!styleRef || !styleRef.toLowerCase().endsWith(".hwpx")) {
+      log("템플릿 HWPX를 먼저 지정하세요.");
+      return;
+    }
+    if (!selected || !selected.toLowerCase().endsWith(".md")) {
+      log("주입할 MD를 먼저 선택하세요 (중앙에 내용 보이는 상태).");
+      return;
+    }
+    const ts = timestamp();
+    const outName = `4. [국문] 결과보고서_최종_${ts}.hwpx`;
+    const outPath = `${workDir}/${outName}`.replace(/\\/g, "/");
+
+    log(`MD → HWPX (템플릿) 시작: ${selected}`);
+    beginBusy("HWPX 주입 (LLM 없음, 직접 매핑)");
+    try {
+      const r = await api.injectFromMd({
+        template_hwpx: styleRef,
+        md_path: selected,
+        output_hwpx: outPath,
+      });
+      log(`완료: ${r.path} (${r.bytes} bytes, ${r.sections_replaced}/${r.md_sections_total} 섹션 매칭)`);
+      addResult(r.path, "결과보고서 HWPX (최종)");
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      log(`주입 실패: ${e.message || e}`);
+    } finally {
+      endBusy();
+    }
+  };
+
+  // 기존 풀 자동 모드 (3 MD → HWPX 한번에) 남겨둠
+  const runTemplateInject = async () => {
+    if (!styleRef || !styleRef.toLowerCase().endsWith(".hwpx")) {
+      log("템플릿 HWPX를 먼저 지정하세요.");
+      return;
+    }
+    const mds = effectiveMdSelection();
+    if (mds.length !== 3) {
+      log(`MD 3개 필요 (현재 ${mds.length}개)`);
+      return;
+    }
+    const [plan, workplan, wrapup] = mds;
+    const ts = timestamp();
+    const outName = `4. [국문] 결과보고서_자동_${ts}.hwpx`;
+    const outPath = `${workDir}/${outName}`.replace(/\\/g, "/");
+
+    log(`자동 템플릿 주입 시작 (검수 없이 바로 HWPX): ${styleRef}`);
+    setStreamBuf("");
+    beginBusy("자동 템플릿 주입 (섹션별 LLM + HWPX 교체)");
     templateInjectSSE(
       {
         template_hwpx: styleRef,
@@ -198,14 +273,14 @@ export default function App() {
       },
       (path) => log(`HWPX 교체 삽입 중: ${path}`),
       (path, bytes, n) => {
-        log(`템플릿 주입 완료: ${path} (${bytes} bytes, ${n} 섹션 교체)`);
-        addResult(path, "결과보고서 HWPX (템플릿 주입)");
+        log(`자동 주입 완료: ${path} (${bytes} bytes, ${n} 섹션 교체)`);
+        addResult(path, "결과보고서 HWPX (자동)");
         setRefreshKey((k) => k + 1);
         setStreamBuf("");
         endBusy();
       },
       (err) => {
-        log(`템플릿 주입 실패: ${err}`);
+        log(`자동 주입 실패: ${err}`);
         endBusy();
       }
     );
@@ -292,11 +367,26 @@ export default function App() {
           📝 결과보고서 생성 ({effectiveMdSelection().length}/3)
         </button>
         <button
+          onClick={runDraftMd}
+          disabled={!styleRef || !styleRef.toLowerCase().endsWith(".hwpx") || effectiveMdSelection().length !== 3}
+          title={styleRef ? `1단계: 3 MD → 템플릿 구조 초안 MD (${styleRef})` : "HWPX 파일을 우클릭 → 템플릿으로 지정"}
+        >
+          📋 초안 MD 생성 ({effectiveMdSelection().length}/3)
+        </button>
+        <button
+          onClick={runInjectFromMd}
+          disabled={!styleRef || !styleRef.toLowerCase().endsWith(".hwpx") || !selected || !selected.toLowerCase().endsWith(".md")}
+          title="2단계: 현재 선택된 MD를 템플릿에 주입 (LLM 호출 없음)"
+        >
+          🎯 MD → HWPX
+        </button>
+        <button
           onClick={runTemplateInject}
           disabled={!styleRef || !styleRef.toLowerCase().endsWith(".hwpx") || effectiveMdSelection().length !== 3}
-          title={styleRef ? `템플릿: ${styleRef}` : "HWPX 파일을 우클릭 → 템플릿으로 지정"}
+          title="자동 모드: 1+2단계 연속. 검수 없이 바로 HWPX"
+          style={{ opacity: 0.7 }}
         >
-          🎯 템플릿 주입 ({effectiveMdSelection().length}/3)
+          ⚡ 자동 주입
         </button>
         <button onClick={() => setSettingsOpen(true)}>⚙ 설정</button>
       </div>

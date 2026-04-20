@@ -127,7 +127,65 @@ export const api = {
     j<{ ok: boolean; models: { id: string; display: string; version: string }[]; error?: string }>(
       `/api/gemini/models?api_key=${encodeURIComponent(api_key)}`
     ),
+  injectFromMd: (body: { template_hwpx: string; md_path: string; output_hwpx: string }) =>
+    j<{ path: string; bytes: number; sections_replaced: number; matched_sections: string[]; md_sections_total: number }>(
+      `/api/template/inject-from-md`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
 };
+
+export function draftMdSSE(
+  body: {
+    template_hwpx: string;
+    output_md: string;
+    plan_md: string;
+    workplan_md: string;
+    wrapup_md: string;
+  },
+  onStart: (totalHeadings: number) => void,
+  onChunk: (text: string) => void,
+  onDone: (outPath: string) => void,
+  onError: (err: string) => void
+): () => void {
+  const ctrl = new AbortController();
+  (async () => {
+    try {
+      const r = await fetch(`/api/template/draft-md`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      if (!r.body) throw new Error("no stream");
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() || "";
+        for (const p of parts) {
+          const lines = p.split("\n");
+          let event = "message";
+          let data = "";
+          for (const ln of lines) {
+            if (ln.startsWith("event:")) event = ln.slice(6).trim();
+            else if (ln.startsWith("data:")) data += ln.slice(5).trim();
+          }
+          if (event === "start") onStart(Number(data));
+          else if (event === "done") onDone(data);
+          else if (event === "error") onError(data);
+          else onChunk(data.replace(/\\n/g, "\n"));
+        }
+      }
+    } catch (e: any) {
+      onError(e.message || String(e));
+    }
+  })();
+  return () => ctrl.abort();
+}
 
 export function composeSSE(
   body: { plan_md: string; workplan_md: string; wrapup_md: string; output_md: string },
