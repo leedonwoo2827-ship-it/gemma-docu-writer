@@ -161,6 +161,31 @@ def _set_paragraph_text(p_elem: etree._Element, text: str) -> None:
             t.text = text
 
 
+def _line_marker(text: str) -> str:
+    """라인의 머리 기호 반환. '○', '-', '·', '•', 아니면 ''."""
+    s = text.lstrip()
+    for m in ("○", "•", "·", "-"):
+        if s.startswith(m):
+            return m
+    return ""
+
+
+def _build_template_library(
+    body_elems: list[etree._Element],
+) -> tuple[dict[str, etree._Element], etree._Element]:
+    """섹션의 기존 본문 단락에서 머리 기호별 스타일 템플릿을 수집."""
+    by_marker: dict[str, etree._Element] = {}
+    for p in body_elems:
+        txt = _paragraph_text(p)
+        if not txt:
+            continue
+        m = _line_marker(txt)
+        if m not in by_marker:
+            by_marker[m] = p
+    default = body_elems[0] if body_elems else None
+    return by_marker, default  # type: ignore[return-value]
+
+
 def inject_section_body(
     section_xml_path: Path,
     section_to_body: dict[str, str],
@@ -168,33 +193,42 @@ def inject_section_body(
 ) -> None:
     """
     section_to_body: {heading_text: new_body_text}. 여러 단락은 \\n 으로 구분.
-    기존 body 단락들을 삭제하고 생성 텍스트를 새 단락으로 삽입. 스타일은 기존 body 첫 단락을 복제해 유지.
+    기존 body 단락들을 삭제하고 생성 텍스트를 새 단락으로 삽입.
+    각 라인의 머리 기호(○, -, 없음)에 맞춰 원본에서 해당 스타일의 단락을 찾아 템플릿으로 씀.
     """
     tree, paragraphs, sections = parse_sections(section_xml_path)
 
     for sec in sections:
         new_body = section_to_body.get(sec.heading_text)
-        if new_body is None:
-            continue
-        if not sec.body_indices:
+        if new_body is None or not sec.body_indices:
             continue
 
-        first_body_elem = paragraphs[sec.body_indices[0]]
-        body_template = template_for_body or _clone_as_template(first_body_elem)
+        body_elems = [paragraphs[i] for i in sec.body_indices]
+        first_body_elem = body_elems[0]
+        marker_templates, default_template = _build_template_library(body_elems)
 
         parent = first_body_elem.getparent()
         if parent is None:
             continue
         insert_idx = list(parent).index(first_body_elem)
 
-        for idx in sec.body_indices:
-            old = paragraphs[idx]
-            if old.getparent() is parent:
-                parent.remove(old)
+        for elem in body_elems:
+            if elem.getparent() is parent:
+                parent.remove(elem)
 
         lines = [ln for ln in new_body.split("\n") if ln.strip()]
         for offset, line in enumerate(lines):
-            new_p = etree.fromstring(etree.tostring(body_template))
+            marker = _line_marker(line)
+            tpl_src = (
+                template_for_body
+                or marker_templates.get(marker)
+                or marker_templates.get("")
+                or default_template
+            )
+            new_p = etree.fromstring(etree.tostring(tpl_src))
+            _strip_layout_cache(new_p)
+            for t in new_p.xpath(".//hp:t", namespaces=NS):
+                t.text = ""
             _set_paragraph_text(new_p, line)
             parent.insert(insert_idx + offset, new_p)
 
