@@ -1,6 +1,6 @@
 # HWPX 결과보고서 작성툴
 
-로컬 PC에서 동작하는 React + FastAPI 웹앱. 계획서(HWP) + Work Plan(PDF) + Wrap Up(PDF)을 합성해 국문 결과보고서 HWPX를 생성한다. 비전 모델(Gemma3n)이 참조 문서의 헤딩/스타일을 추출해 MD에 적용하는 방식.
+로컬 PC에서 동작하는 React + FastAPI 웹앱. 계획서(HWP) + Work Plan(PDF) + Wrap Up(PDF)을 합성해 국문 결과보고서 HWPX를 생성한다. 비전 모델(Gemma4n)이 참조 문서의 헤딩/스타일을 추출해 MD에 적용하는 방식.
 
 ## 구성
 
@@ -16,11 +16,11 @@
 | Python 3.11+ | 백엔드/MCP | https://www.python.org |
 | Node 18+ | 프론트엔드 | https://nodejs.org |
 | Ollama | 로컬 LLM | https://ollama.com |
-| `gemma3n:e4b` | 비전+텍스트 | `ollama pull gemma3n:e4b` |
+| `gemma4:e4b` | 비전+텍스트 | `ollama pull gemma4:e4b` |
 | LibreOffice | HWP→이미지 (선택) | https://www.libreoffice.org |
 | kordoc | HWP→MD (선택) | `mcp/kordoc` 에 체크아웃 후 `npm install && npm run build` |
 
-> 사용자 환경에서 모델명이 `gemma4:e4b`로 표기되더라도 태그만 다를 뿐 동작은 동일하다. 설정 모달에서 모델 이름을 실제 `ollama list` 결과에 맞게 수정할 것.
+> 설정 모달에서 모델 이름을 실제 `ollama list` 결과에 맞게 수정할 수 있다 (자유 입력 지원).
 
 ## 설치
 
@@ -53,7 +53,7 @@ start.bat
 ## 트러블슈팅
 
 - **Ollama 오프라인 배지**: `ollama serve` 실행 확인.
-- **`gemma3n:e4b` 없음**: `ollama pull gemma3n:e4b`.
+- **`gemma4:e4b` 없음**: `ollama pull gemma4:e4b`.
 - **HWP 렌더링 실패**: LibreOffice 미설치. 참조 문서를 PDF로 변환해 `_context/`에 넣고 다시 시도.
 - **kordoc 없음**: PDF만 내부 변환 가능. HWP는 Claude Desktop 등 외부 도구로 MD를 만들어 드롭존에 업로드.
 - **HWPX 변환 중 `python-hwpx` 오류**: `pip install --upgrade python-hwpx` 후 `install.bat` 재실행.
@@ -80,6 +80,6 @@ start.bat
 
 ## 한계
 
-- Gemma3n E4B는 글자 크기 상대 비교/헤딩 계층 추출에는 쓸만하지만 폰트명/pt 정밀도는 낮다 → StyleJSON은 상대 규칙 + 프리셋 병합.
+- Gemma4n E4B는 글자 크기 상대 비교/헤딩 계층 추출에는 쓸만하지만 폰트명/pt 정밀도는 낮다 → StyleJSON은 상대 규칙 + 프리셋 병합.
 - 3문서 합성은 컨텍스트 한도 내 청크 후 단일 호출. 대용량 문서는 섹션별로 나눠서 생성 권장.
 - "완전 자동"이 아닌 "초안 자동 + 사용자 후편집" 파이프라인으로 설계됨.

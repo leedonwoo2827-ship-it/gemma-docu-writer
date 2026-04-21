@@ -32,7 +32,7 @@
 참조 HWP/PDF ─► LibreOffice headless ─► PNG 페이지
                                             │
                                             ▼
-                                   멀티모달 LLM (Gemma3n/Gemini)
+                                   멀티모달 LLM (Gemma4n/Gemini)
                                             │
                                             ▼
                                      StyleJSON
@@ -235,7 +235,7 @@ print(f"{result['sections_replaced']} 섹션 교체, {result['bytes']} bytes")
 
 **질문: 왜 "MD → HWPX" 만 하지 않고 "템플릿 주입" 까지 만들었나?**
 
-실험 결과 Gemma3n / Gemini 로 합성한 MD를 아무리 잘 HWPX로 변환해도 **한국 공공문서의 표지/목차/헤더를 재현할 수 없다**. 이는 LLM 품질 문제가 아니라 **포맷 표현력 문제**.
+실험 결과 Gemma4n / Gemini 로 합성한 MD를 아무리 잘 HWPX로 변환해도 **한국 공공문서의 표지/목차/헤더를 재현할 수 없다**. 이는 LLM 품질 문제가 아니라 **포맷 표현력 문제**.
 
 반대로, 이미 존재하는 HWPX(지난 차수 보고서 등)를 템플릿으로 두고 **본문만 LLM이 갈아끼우면** 양식 문제는 사라진다. 남는 건 LLM의 내용 품질뿐이고, 그건 모델 선택으로 해결 가능 (Gemma → Gemini).
 
