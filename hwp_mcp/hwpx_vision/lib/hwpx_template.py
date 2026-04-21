@@ -161,10 +161,13 @@ def _set_paragraph_text(p_elem: etree._Element, text: str) -> None:
             t.text = text
 
 
+KNOWN_MARKERS = ("○", "•", "·", "△", "▲", "※", "◦", "–", "—", "-", "▪", "■")
+
+
 def _line_marker(text: str) -> str:
-    """라인의 머리 기호 반환. '○', '-', '·', '•', 아니면 ''."""
+    """라인의 머리 기호 반환. KNOWN_MARKERS 중 하나, 없으면 ''."""
     s = text.lstrip()
-    for m in ("○", "•", "·", "-"):
+    for m in KNOWN_MARKERS:
         if s.startswith(m):
             return m
     return ""
@@ -189,12 +192,16 @@ def _build_template_library(
 def inject_section_body(
     section_xml_path: Path,
     section_to_body: dict[str, str],
-    template_for_body: Optional[etree._Element] = None,
+    marker_templates: Optional[dict[str, etree._Element]] = None,
+    default_template: Optional[etree._Element] = None,
 ) -> None:
     """
     section_to_body: {heading_text: new_body_text}. 여러 단락은 \\n 으로 구분.
     기존 body 단락들을 삭제하고 생성 텍스트를 새 단락으로 삽입.
-    각 라인의 머리 기호(○, -, 없음)에 맞춰 원본에서 해당 스타일의 단락을 찾아 템플릿으로 씀.
+
+    marker_templates: 문서 전체에서 뽑은 {marker: paragraph_style_element}
+    default_template: 기호 없는 라인에 쓸 기본 템플릿
+    둘 다 없으면 섹션 내부에서 자체적으로 찾음 (하위 호환).
     """
     tree, paragraphs, sections = parse_sections(section_xml_path)
 
@@ -205,7 +212,11 @@ def inject_section_body(
 
         body_elems = [paragraphs[i] for i in sec.body_indices]
         first_body_elem = body_elems[0]
-        marker_templates, default_template = _build_template_library(body_elems)
+
+        local_templates: dict[str, etree._Element] = {}
+        local_default: Optional[etree._Element] = None
+        if marker_templates is None and default_template is None:
+            local_templates, local_default = _build_template_library(body_elems)
 
         parent = first_body_elem.getparent()
         if parent is None:
@@ -219,12 +230,17 @@ def inject_section_body(
         lines = [ln for ln in new_body.split("\n") if ln.strip()]
         for offset, line in enumerate(lines):
             marker = _line_marker(line)
+            key = marker if marker else "__plain__"
             tpl_src = (
-                template_for_body
-                or marker_templates.get(marker)
-                or marker_templates.get("")
+                (marker_templates.get(key) if marker_templates else None)
+                or (marker_templates.get("__plain__") if marker_templates else None)
                 or default_template
+                or local_templates.get(marker)
+                or local_templates.get("")
+                or local_default
             )
+            if tpl_src is None:
+                continue
             new_p = etree.fromstring(etree.tostring(tpl_src))
             _strip_layout_cache(new_p)
             for t in new_p.xpath(".//hp:t", namespaces=NS):
@@ -277,21 +293,34 @@ def _repack(source_dir: str, output_path: str) -> None:
             z.write(p, rel)
 
 
-def _pick_canonical_body_template(
+def _pick_canonical_templates_by_marker(
     all_section_xmls: list[Path],
-) -> Optional[etree._Element]:
+) -> tuple[dict[str, etree._Element], Optional[etree._Element]]:
     """
-    문서 전체에서 '가장 먼저 나오는 본문 단락' 하나를 반환.
-    기호 우선순위 없이 문서 순서 그대로. 모든 섹션의 모든 라인이 이 스타일을 재사용 (일괄 통일).
+    문서 전체를 스캔해 각 머리 기호별로 '처음 나오는 본문 단락'을 캐노니컬 템플릿으로 채용.
+    반환: ({marker: template_element}, 기본_템플릿)
+    - 같은 기호는 문서 내에서 항상 동일 스타일로 렌더링
+    - 기본 템플릿: 기호가 없는 라인에 사용 (첫 번째 일반 본문 단락)
     """
+    by_marker: dict[str, etree._Element] = {}
+    default: Optional[etree._Element] = None
     for sx in all_section_xmls:
         _, paragraphs, sections = parse_sections(sx)
         for sec in sections:
             for idx in sec.body_indices:
                 p = paragraphs[idx]
-                if _paragraph_text(p):
-                    return _strip_and_clear(etree.fromstring(etree.tostring(p)))
-    return None
+                txt = _paragraph_text(p)
+                if not txt:
+                    continue
+                m = _line_marker(txt)
+                key = m if m else "__plain__"
+                if key not in by_marker:
+                    cloned = _strip_and_clear(etree.fromstring(etree.tostring(p)))
+                    if cloned is not None:
+                        by_marker[key] = cloned
+                        if default is None:
+                            default = cloned
+    return by_marker, default
 
 
 def _strip_and_clear(p: Optional[etree._Element]) -> Optional[etree._Element]:
@@ -310,19 +339,24 @@ def render_from_template(
 ) -> dict:
     """
     템플릿 HWPX를 열어 모든 section XML을 순회하며 매칭되는 섹션 본문을 교체.
-    문서 전체에 걸쳐 하나의 캐노니컬 템플릿 단락 스타일을 사용해 일관성 유지.
+    기호별(○/-/△/…)로 문서 전체에 통일된 스타일을 적용한다.
     """
     replaced = 0
     with tempfile.TemporaryDirectory() as tmp:
         _extract(template_hwpx, tmp)
         section_xmls = _find_all_section_xmls(tmp)
-        canonical = _pick_canonical_body_template(section_xmls)
+        marker_templates, default_template = _pick_canonical_templates_by_marker(section_xmls)
         for section_xml in section_xmls:
             _, _, sections = parse_sections(section_xml)
             matching = {s.heading_text: section_to_body[s.heading_text] for s in sections if s.heading_text in section_to_body}
             if not matching:
                 continue
-            inject_section_body(section_xml, matching, template_for_body=canonical)
+            inject_section_body(
+                section_xml,
+                matching,
+                marker_templates=marker_templates,
+                default_template=default_template,
+            )
             replaced += len(matching)
         _repack(tmp, output_hwpx)
     size = Path(output_hwpx).stat().st_size
