@@ -277,6 +277,46 @@ def _repack(source_dir: str, output_path: str) -> None:
             z.write(p, rel)
 
 
+def _pick_canonical_body_template(
+    all_section_xmls: list[Path],
+) -> Optional[etree._Element]:
+    """
+    문서 전체에서 본문 스타일 기준 단락 1개를 골라 반환.
+    우선순위: 첫 번째 ○ 단락 > 첫 번째 - 단락 > 첫 번째 일반 본문 단락.
+    모든 섹션의 모든 라인이 이 스타일을 그대로 쓴다 (일괄 통일).
+    """
+    first_bullet = None
+    first_dash = None
+    first_plain = None
+    for sx in all_section_xmls:
+        _, paragraphs, sections = parse_sections(sx)
+        for sec in sections:
+            for idx in sec.body_indices:
+                p = paragraphs[idx]
+                txt = _paragraph_text(p)
+                if not txt:
+                    continue
+                m = _line_marker(txt)
+                if m == "○" and first_bullet is None:
+                    first_bullet = etree.fromstring(etree.tostring(p))
+                elif m == "-" and first_dash is None:
+                    first_dash = etree.fromstring(etree.tostring(p))
+                elif m == "" and first_plain is None:
+                    first_plain = etree.fromstring(etree.tostring(p))
+                if first_bullet is not None:
+                    return _strip_and_clear(first_bullet)
+    return _strip_and_clear(first_bullet or first_dash or first_plain)
+
+
+def _strip_and_clear(p: Optional[etree._Element]) -> Optional[etree._Element]:
+    if p is None:
+        return None
+    _strip_layout_cache(p)
+    for t in p.xpath(".//hp:t", namespaces=NS):
+        t.text = ""
+    return p
+
+
 def render_from_template(
     template_hwpx: str,
     section_to_body: dict[str, str],
@@ -284,17 +324,19 @@ def render_from_template(
 ) -> dict:
     """
     템플릿 HWPX를 열어 모든 section XML을 순회하며 매칭되는 섹션 본문을 교체.
-    section_to_body 키는 extract_headings에서 뽑은 heading_text와 정확히 일치해야 한다.
+    문서 전체에 걸쳐 하나의 캐노니컬 템플릿 단락 스타일을 사용해 일관성 유지.
     """
     replaced = 0
     with tempfile.TemporaryDirectory() as tmp:
         _extract(template_hwpx, tmp)
-        for section_xml in _find_all_section_xmls(tmp):
+        section_xmls = _find_all_section_xmls(tmp)
+        canonical = _pick_canonical_body_template(section_xmls)
+        for section_xml in section_xmls:
             _, _, sections = parse_sections(section_xml)
             matching = {s.heading_text: section_to_body[s.heading_text] for s in sections if s.heading_text in section_to_body}
             if not matching:
                 continue
-            inject_section_body(section_xml, matching)
+            inject_section_body(section_xml, matching, template_for_body=canonical)
             replaced += len(matching)
         _repack(tmp, output_hwpx)
     size = Path(output_hwpx).stat().st_size
