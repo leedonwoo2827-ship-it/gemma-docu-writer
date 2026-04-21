@@ -12,14 +12,19 @@ const DEFAULT_CFG = {
   gemini_vision_model: "gemini-2.5-flash",
 };
 
+// '📋 계정 모델 목록' 으로 실제 사용 가능 모델 확인 권장.
+// 3.x는 이름 규칙이 자주 바뀌므로 여러 후보명 포함.
 const KNOWN_GEMINI_MODELS = [
-  "gemini-3.1-pro",
+  "gemini-3-pro",
+  "gemini-3-pro-preview",
+  "gemini-3-pro-latest",
+  "gemini-3.0-pro",
   "gemini-3-flash",
-  "gemini-3.1-flash",
-  "gemini-3.1-flash-lite",
+  "gemini-3-flash-preview",
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
+  "gemini-2.0-flash",
 ];
 
 type TestResult = { ok: boolean; msg: string } | null;
@@ -171,8 +176,16 @@ export default function SettingsModal({ onClose, workDir, setWorkDir }: Props) {
                 type="password"
                 value={cfg.gemini_api_key || ""}
                 onChange={(e) => setCfg({ ...cfg, gemini_api_key: e.target.value })}
+                onBlur={() => {
+                  if (cfg.gemini_api_key && !cfg.gemini_api_key.startsWith("***") && cfg.gemini_api_key.length > 20) {
+                    fetchGeminiModels();
+                  }
+                }}
                 placeholder="AIza..."
               />
+              <div style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
+                키 입력 후 포커스 빠지면 계정 사용 가능 모델 자동 조회
+              </div>
             </div>
 
             <div className="field">
