@@ -11,7 +11,7 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hwp_mcp.hwpx_vision.lib.ollama_client import health, list_models
+from doc_mcp.hwpx_vision.lib.ollama_client import health, list_models
 
 from backend.services.llm import load_config, save_config
 

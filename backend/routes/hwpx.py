@@ -16,8 +16,8 @@ from backend.services.composer import compose_with_template_headings
 import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from hwp_mcp.hwpx_vision.tools.template_inject import list_headings, inject_to_template
-from hwp_mcp.hwpx_vision.lib.md_sections import parse_md_sections, match_to_template_headings
+from doc_mcp.hwpx_vision.tools.template_inject import list_headings, inject_to_template
+from doc_mcp.hwpx_vision.lib.md_sections import parse_md_sections, match_to_template_headings
 
 
 router = APIRouter(prefix="/api", tags=["hwpx"])

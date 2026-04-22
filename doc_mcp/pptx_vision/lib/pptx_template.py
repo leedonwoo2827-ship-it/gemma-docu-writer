@@ -1,7 +1,7 @@
 """
 PPTX 템플릿 조작: python-pptx로 슬라이드 텍스트/표 셀만 교체하고 나머지는 유지.
 
-HWPX 버전 (hwp_mcp/hwpx_vision/lib/hwpx_template.py) 과 철학 동일:
+HWPX 버전 (doc_mcp/hwpx_vision/lib/hwpx_template.py) 과 철학 동일:
 - 레이아웃/이미지/차트/애니메이션 건드리지 않음
 - 제목 placeholder + 본문 placeholder + 표 셀 텍스트만 교체
 - 폰트/크기/색상은 원본 run property 보존 (text 만 바꿈)

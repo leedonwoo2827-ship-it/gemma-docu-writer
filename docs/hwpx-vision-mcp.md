@@ -1,6 +1,6 @@
 # HWPX Vision MCP — 한글 보고서 양식 유지 설계 문서
 
-> `hwp_mcp/hwpx_vision/` 에 위치한 MCP 서버.
+> `doc_mcp/hwpx_vision/` 에 위치한 MCP 서버.
 > 한국 공공기관(KOICA·ODA 등) 결과보고서의 **양식·번호체계·로고·페이지 레이아웃을 그대로 유지**하면서 본문만 LLM으로 재생성하는 것이 목적.
 
 ---
@@ -72,9 +72,9 @@
 - **처리**: Ollama `POST /api/generate` 에 base64 이미지 + 프롬프트 → JSON 응답 → Pydantic 검증
 - **출력**: `StyleJSON` (헤딩 레벨별 번호/폰트/정렬, 본문 스타일, 표 테두리, 페이지 여백)
 - **캐시**: 같은 이미지 SHA-256 hash → `.style_cache/<hash>.json` 재사용
-- **실패 폴백**: JSON 파싱 실패 시 [default_preset()](../hwp_mcp/hwpx_vision/lib/style_schema.py#L45) 으로 자동 대체
+- **실패 폴백**: JSON 파싱 실패 시 [default_preset()](../doc_mcp/hwpx_vision/lib/style_schema.py#L45) 으로 자동 대체
 
-**StyleJSON 스키마** ([style_schema.py](../hwp_mcp/hwpx_vision/lib/style_schema.py)):
+**StyleJSON 스키마** ([style_schema.py](../doc_mcp/hwpx_vision/lib/style_schema.py)):
 ```python
 class HeadingLevel:
     level: 1~6
@@ -117,7 +117,7 @@ class PageMargin:
 ### 3.4 `template_inject(template_hwpx, section_to_body, output_hwpx)` *(경로 B)*
 
 - **입력**: 참조 HWPX 경로 + `{heading_text: body_text}` 딕셔너리
-- **처리** ([hwpx_template.py](../hwp_mcp/hwpx_vision/lib/hwpx_template.py)):
+- **처리** ([hwpx_template.py](../doc_mcp/hwpx_vision/lib/hwpx_template.py)):
   1. ZIP 해제 → `Contents/section*.xml` 모두 파싱 (여러 섹션 지원)
   2. 각 `<hp:p>` 의 텍스트를 모아 **헤딩 판별**
      - 패턴: `1. ...` `가. ...` `A. ...` `(1) ...`
@@ -150,7 +150,7 @@ async def compose_section(section_title, plan_md, workplan_md, wrapup_md) -> str
 
 ---
 
-## 5. Markdown 정리 규칙 ([md_clean.py](../hwp_mcp/hwpx_vision/lib/md_clean.py))
+## 5. Markdown 정리 규칙 ([md_clean.py](../doc_mcp/hwpx_vision/lib/md_clean.py))
 
 LLM이 시스템 프롬프트를 무시하고 Markdown을 뱉어내는 경우가 많아 후처리로 강제 정리.
 
@@ -210,7 +210,7 @@ LLMProvider├─ GeminiProvider ── googleapis.com (클라우드)
 ## 8. 빠른 사용 예 (파이썬)
 
 ```python
-from hwp_mcp.hwpx_vision.tools.template_inject import list_headings, inject_to_template
+from doc_mcp.hwpx_vision.tools.template_inject import list_headings, inject_to_template
 
 # 1. 헤딩 미리보기
 headings = list_headings("참조.hwpx")
@@ -249,10 +249,10 @@ print(f"{result['sections_replaced']} 섹션 교체, {result['bytes']} bytes")
 
 ## 참조 파일
 
-- [hwp_mcp/hwpx_vision/server.py](../hwp_mcp/hwpx_vision/server.py) — FastMCP 엔트리
-- [hwp_mcp/hwpx_vision/lib/hwpx_template.py](../hwp_mcp/hwpx_vision/lib/hwpx_template.py) — 경로 B 핵심
-- [hwp_mcp/hwpx_vision/lib/hwpx_writer.py](../hwp_mcp/hwpx_vision/lib/hwpx_writer.py) — 경로 A 핵심
-- [hwp_mcp/hwpx_vision/lib/md_clean.py](../hwp_mcp/hwpx_vision/lib/md_clean.py) — 후처리
-- [hwp_mcp/hwpx_vision/lib/style_schema.py](../hwp_mcp/hwpx_vision/lib/style_schema.py) — StyleJSON
+- [doc_mcp/hwpx_vision/server.py](../doc_mcp/hwpx_vision/server.py) — FastMCP 엔트리
+- [doc_mcp/hwpx_vision/lib/hwpx_template.py](../doc_mcp/hwpx_vision/lib/hwpx_template.py) — 경로 B 핵심
+- [doc_mcp/hwpx_vision/lib/hwpx_writer.py](../doc_mcp/hwpx_vision/lib/hwpx_writer.py) — 경로 A 핵심
+- [doc_mcp/hwpx_vision/lib/md_clean.py](../doc_mcp/hwpx_vision/lib/md_clean.py) — 후처리
+- [doc_mcp/hwpx_vision/lib/style_schema.py](../doc_mcp/hwpx_vision/lib/style_schema.py) — StyleJSON
 - [backend/services/section_composer.py](../backend/services/section_composer.py) — 섹션별 LLM 호출
 - [backend/routes/hwpx.py](../backend/routes/hwpx.py) — `/api/template/inject` SSE 엔드포인트

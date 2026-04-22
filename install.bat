@@ -27,10 +27,10 @@ pip install -r backend\requirements.txt
 call deactivate
 
 echo [3/6] MCP venv
-if not exist hwp_mcp\hwpx_vision\.venv python -m venv hwp_mcp\hwpx_vision\.venv
-call hwp_mcp\hwpx_vision\.venv\Scripts\activate
+if not exist doc_mcp\hwpx_vision\.venv python -m venv doc_mcp\hwpx_vision\.venv
+call doc_mcp\hwpx_vision\.venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install -r hwp_mcp\hwpx_vision\requirements.txt
+pip install -r doc_mcp\hwpx_vision\requirements.txt
 call deactivate
 
 echo [4/6] Frontend npm install
@@ -39,13 +39,13 @@ call npm install
 popd
 
 echo [5/6] kordoc (optional) - build if present
-if exist hwp_mcp\kordoc\package.json (
-  pushd hwp_mcp\kordoc
+if exist doc_mcp\kordoc\package.json (
+  pushd doc_mcp\kordoc
   call npm install
   call npm run build
   popd
 ) else (
-  echo [INFO] hwp_mcp\kordoc not found. Internal MD conversion limited to PDF. Drop HWP-derived MD files manually.
+  echo [INFO] doc_mcp\kordoc not found. Internal MD conversion limited to PDF. Drop HWP-derived MD files manually.
 )
 
 echo [6/6] Ollama models

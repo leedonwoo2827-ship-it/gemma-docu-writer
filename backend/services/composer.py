@@ -7,7 +7,7 @@ from typing import AsyncIterator
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hwp_mcp.hwpx_vision.lib.vision_prompt import (
+from doc_mcp.hwpx_vision.lib.vision_prompt import (
     COMPOSER_SYSTEM,
     TEMPLATE_COMPOSER_SYSTEM,
     composer_user_prompt,

@@ -14,11 +14,11 @@ from backend.services.section_composer import compose_section
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hwp_mcp.pptx_vision.tools.template_inject import (
+from doc_mcp.pptx_vision.tools.template_inject import (
     list_pptx_slides,
     inject_pptx_from_map,
 )
-from hwp_mcp.hwpx_vision.lib.md_sections import (
+from doc_mcp.hwpx_vision.lib.md_sections import (
     parse_md_sections,
     match_to_template_headings,
 )

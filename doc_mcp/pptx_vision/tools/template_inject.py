@@ -9,7 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from hwp_mcp.hwpx_vision.lib.md_clean import clean_markdown
+from doc_mcp.hwpx_vision.lib.md_clean import clean_markdown
 
 
 def list_pptx_slides(template_pptx: str) -> list[dict[str, Any]]:

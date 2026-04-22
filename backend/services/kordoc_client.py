@@ -27,7 +27,7 @@ def _kordoc_cli() -> str | None:
 
 def _hwpx_to_md_fallback(source: str, out_md: str) -> str:
     """kordoc 없이 HWPX를 직접 파싱해 MD로 추출. 헤딩 패턴(1./가./A./(1))을 #/##/###/#### 로 매핑."""
-    from hwp_mcp.hwpx_vision.lib.hwpx_template import (
+    from doc_mcp.hwpx_vision.lib.hwpx_template import (
         _is_heading,
         _heading_level,
         _paragraph_text,
