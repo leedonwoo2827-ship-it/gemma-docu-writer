@@ -7,7 +7,7 @@ import RightSidebar from "./components/RightSidebar";
 import MdDropZone from "./components/MdDropZone";
 import MdList from "./components/MdList";
 import InjectTargetPanel from "./components/InjectMdPanel";
-import { api, composeSSE, draftMdSSE, FileNode } from "./api";
+import { api, composeSSE, draftMdSSE, pptxDraftMdSSE, FileNode } from "./api";
 
 const DEFAULT_ROOT = "_context";
 
@@ -130,7 +130,10 @@ export default function App() {
       log(`MD 최소 2개 필요 (현재 ${mds.length}개). Ctrl+클릭으로 추가 선택.`);
       return;
     }
-    const hasTemplate = !!(styleRef && styleRef.toLowerCase().endsWith(".hwpx"));
+    const tplLower = (styleRef || "").toLowerCase();
+    const isHwpx = tplLower.endsWith(".hwpx");
+    const isPptx = tplLower.endsWith(".pptx");
+    const hasTemplate = isHwpx || isPptx;
 
     const ts = timestamp();
     const outName = hasTemplate
@@ -139,49 +142,49 @@ export default function App() {
     const outPath = `${workDir}/${outName}`.replace(/\\/g, "/");
 
     setStreamBuf("");
-    log(`합성 시작 (${mds.length}개 MD${hasTemplate ? ", 템플릿 구조 반영" : ""})`);
+    log(`합성 시작 (${mds.length}개 MD${hasTemplate ? `, ${isPptx ? "PPTX" : "HWPX"} 템플릿 구조 반영` : ""})`);
     beginBusy(hasTemplate ? "템플릿 초안 MD 생성" : "결과보고서 합성");
 
-    if (hasTemplate) {
+    const onChunk = (chunk: string) => {
+      setStreamBuf((b) => b + chunk);
+      setChunkCount((c) => c + 1);
+    };
+    const onDone = (outPathDone: string) => {
+      log(`초안 MD 완료: ${outPathDone}`);
+      addResult(outPathDone, hasTemplate ? "결과보고서 MD (템플릿 초안)" : "결과보고서 MD");
+      setRefreshKey((k) => k + 1);
+      setSelected(outPathDone);
+      setSelectedExt(".md");
+      setStreamBuf("");
+      endBusy();
+    };
+    const onError = (err: string) => {
+      log(`합성 실패: ${err}`);
+      endBusy();
+    };
+
+    if (isPptx) {
+      pptxDraftMdSSE(
+        { template_pptx: styleRef!, output_md: outPath, source_md_paths: mds },
+        (n) => log(`슬라이드 ${n}개 기반 작성`),
+        onChunk,
+        onDone,
+        onError
+      );
+    } else if (isHwpx) {
       draftMdSSE(
         { template_hwpx: styleRef!, output_md: outPath, source_md_paths: mds },
-        (n) => log(`템플릿 헤딩 ${n}개 기반으로 작성`),
-        (chunk) => {
-          setStreamBuf((b) => b + chunk);
-          setChunkCount((c) => c + 1);
-        },
-        (outPathDone) => {
-          log(`초안 MD 완료: ${outPathDone}`);
-          addResult(outPathDone, "결과보고서 MD (템플릿 초안)");
-          setRefreshKey((k) => k + 1);
-          setSelected(outPathDone);
-          setSelectedExt(".md");
-          setStreamBuf("");
-          endBusy();
-        },
-        (err) => {
-          log(`합성 실패: ${err}`);
-          endBusy();
-        }
+        (n) => log(`템플릿 헤딩 ${n}개 기반 작성`),
+        onChunk,
+        onDone,
+        onError
       );
     } else {
       composeSSE(
         { source_md_paths: mds, output_md: outPath },
-        (chunk) => {
-          setStreamBuf((b) => b + chunk);
-          setChunkCount((c) => c + 1);
-        },
-        (outPathDone) => {
-          log(`합성 완료: ${outPathDone}`);
-          addResult(outPathDone, "결과보고서 MD");
-          setRefreshKey((k) => k + 1);
-          setStreamBuf("");
-          endBusy();
-        },
-        (err) => {
-          log(`합성 실패: ${err}`);
-          endBusy();
-        }
+        onChunk,
+        onDone,
+        onError
       );
     }
   };
@@ -194,6 +197,35 @@ export default function App() {
     const ts = timestamp();
     const out = selected.replace(/\.md$/i, `_${ts}.hwpx`);
     await convertHwpx(out);
+  };
+
+  const runPptxFromSelected = async () => {
+    if (!selected || !selected.toLowerCase().endsWith(".md")) {
+      log("PPTX로 만들 MD를 먼저 선택하세요.");
+      return;
+    }
+    if (!styleRef || !styleRef.toLowerCase().endsWith(".pptx")) {
+      log("PPTX 템플릿이 지정되지 않았습니다. PPTX 파일 우클릭 → '템플릿으로 지정'");
+      return;
+    }
+    const ts = timestamp();
+    const out = selected.replace(/\.md$/i, `_${ts}.pptx`);
+    beginBusy("PPTX 생성 (템플릿 주입)");
+    log(`PPTX 생성: ${selected} → ${styleRef}`);
+    try {
+      const r = await api.pptxInjectFromMd({
+        template_pptx: styleRef,
+        md_path: selected,
+        output_pptx: out,
+      });
+      log(`완료: ${r.path} (${r.bytes} bytes, ${r.slides_replaced}/${r.md_sections_total} 슬라이드 매칭)`);
+      addResult(r.path, "결과보고서 PPTX (템플릿)");
+      setRefreshKey((k) => k + 1);
+    } catch (e: any) {
+      log(`PPTX 실패: ${e.message || e}`);
+    } finally {
+      endBusy();
+    }
   };
 
   const convertHwpx = async (outputHwpx: string) => {
@@ -232,6 +264,7 @@ export default function App() {
     const p = menu.path;
     const isHwpPdf = [".hwp", ".hwpx", ".pdf", ".docx"].includes(menu.ext || "");
     const isHwpx = menu.ext === ".hwpx";
+    const isPptx = menu.ext === ".pptx";
     const isMd = menu.ext === ".md";
     const mdCount = effectiveMdSelection().length;
     return [
@@ -243,7 +276,7 @@ export default function App() {
       {
         label: `선택된 MD ${mdCount}개로 결과보고서 생성`,
         onClick: compose,
-        disabled: mdCount !== 3,
+        disabled: mdCount < 2,
       },
       {
         label: "HWPX로 변환 (현재 선택)",
@@ -253,12 +286,14 @@ export default function App() {
       {
         label: isHwpx
           ? "★ 이 HWPX를 템플릿으로 지정"
-          : "템플릿은 HWPX만 지정 가능 (한/글에서 .hwpx로 저장)",
+          : isPptx
+          ? "★ 이 PPTX를 템플릿으로 지정"
+          : "템플릿은 HWPX/PPTX만 지정 가능",
         onClick: () => {
           setStyleRef(p);
           log(`템플릿 지정: ${p}`);
         },
-        disabled: !isHwpx,
+        disabled: !(isHwpx || isPptx),
       },
     ];
   }, [menu, multiSelected, selected, styleRef]);
@@ -296,15 +331,42 @@ export default function App() {
         </button>
         <button
           onClick={runHwpxFromSelected}
-          disabled={!selected || !selected.toLowerCase().endsWith(".md")}
+          disabled={
+            !selected ||
+            !selected.toLowerCase().endsWith(".md") ||
+            (!!styleRef && !styleRef.toLowerCase().endsWith(".hwpx"))
+          }
           title={
-            styleRef
+            styleRef && styleRef.toLowerCase().endsWith(".hwpx")
               ? "현재 선택된 MD + 템플릿 HWPX → 최종 HWPX (LLM 없음)"
+              : styleRef
+              ? "템플릿이 HWPX가 아님 — HWPX 템플릿으로 바꾸세요"
               : "현재 선택된 MD → 단순 HWPX (템플릿 없이)"
           }
         >
           🎯 HWPX 생성
-          {styleRef && <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>}
+          {styleRef && styleRef.toLowerCase().endsWith(".hwpx") && (
+            <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>
+          )}
+        </button>
+        <button
+          onClick={runPptxFromSelected}
+          disabled={
+            !selected ||
+            !selected.toLowerCase().endsWith(".md") ||
+            !styleRef ||
+            !styleRef.toLowerCase().endsWith(".pptx")
+          }
+          title={
+            styleRef && styleRef.toLowerCase().endsWith(".pptx")
+              ? "현재 선택된 MD + 템플릿 PPTX → 최종 PPTX (LLM 없음)"
+              : "PPTX 템플릿을 우클릭 → 템플릿으로 지정하세요"
+          }
+        >
+          🎨 PPTX 생성
+          {styleRef && styleRef.toLowerCase().endsWith(".pptx") && (
+            <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>
+          )}
         </button>
         <button onClick={() => setSettingsOpen(true)}>⚙ 설정</button>
       </div>

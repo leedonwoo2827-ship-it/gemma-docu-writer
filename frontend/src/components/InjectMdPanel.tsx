@@ -7,10 +7,16 @@ type Props = {
 
 export default function InjectTargetPanel({ templateHwpx, active, onClear, onSelect }: Props) {
   const name = templateHwpx ? templateHwpx.split(/[\\/]/).pop() : null;
+  const lower = (templateHwpx || "").toLowerCase();
+  const isPptx = lower.endsWith(".pptx");
+  const isHwpx = lower.endsWith(".hwpx");
+  const tagClass = isPptx ? "ext-pptx" : isHwpx ? "ext-hwpx" : "";
+  const tagLabel = isPptx ? "pptx" : isHwpx ? "hwpx" : "?";
+  const title = isPptx ? "🎨 주입 문서 (템플릿 PPTX)" : "🎯 주입 문서 (템플릿 HWPX)";
   return (
     <div className="panel-section" style={{ borderTop: "2px solid var(--accent)" }}>
       <div className="panel-section-title" style={{ color: "var(--accent)" }}>
-        🎯 주입 문서 (템플릿 HWPX)
+        {title}
       </div>
       {templateHwpx ? (
         <div
@@ -19,7 +25,7 @@ export default function InjectTargetPanel({ templateHwpx, active, onClear, onSel
           title={templateHwpx}
           style={{ paddingLeft: 10 }}
         >
-          <span className="ext-tag ext-hwpx">hwpx</span>
+          <span className={`ext-tag ${tagClass}`}>{tagLabel}</span>
           <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
           <button
             onClick={(e) => {
@@ -34,8 +40,8 @@ export default function InjectTargetPanel({ templateHwpx, active, onClear, onSel
         </div>
       ) : (
         <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.5 }}>
-          HWPX 파일 우클릭 →<br />
-          <b style={{ color: "var(--accent)" }}>"★ 이 HWPX를 템플릿으로 지정"</b>
+          HWPX / PPTX 파일 우클릭 →<br />
+          <b style={{ color: "var(--accent)" }}>"★ 이 HWPX/PPTX를 템플릿으로 지정"</b>
         </div>
       )}
     </div>
