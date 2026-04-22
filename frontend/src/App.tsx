@@ -242,15 +242,33 @@ export default function App() {
     beginBusy(hasTemplate ? "HWPX 생성 (템플릿 주입)" : "HWPX 생성 (단순 변환)");
     try {
       if (hasTemplate) {
-        log(`HWPX 생성: ${selected} → 템플릿 주입${formatRef ? " (+ 양식)" : ""}`);
-        const r = await api.injectFromMd({
-          template_hwpx: styleRef!,
-          md_path: selected,
-          output_hwpx: outputHwpx,
-          style_hwpx: formatRef || undefined,
-        });
-        log(`완료: ${r.path} (${r.bytes} bytes, ${r.sections_replaced}/${r.md_sections_total} 섹션 매칭)${formatRef ? " · 양식 차용" : ""}`);
-        addResult(r.path, "결과보고서 HWPX (템플릿)");
+        const bothSet = !!(styleRef && formatRef && styleRef.toLowerCase().endsWith(".hwpx") && formatRef.toLowerCase().endsWith(".hwpx"));
+        let outPath = "";
+        if (bothSet) {
+          // Plan B: 양식 문서 베이스라인 + 주입 문서 헤딩 리스트로 섹션 N번 복제
+          log(`HWPX 생성 (양식+주입 레이아웃 모드): ${formatRef!.split(/[\\/]/).pop()} ← 헤딩: ${styleRef!.split(/[\\/]/).pop()} ← ${selected.split(/[\\/]/).pop()}`);
+          const r = await api.injectWithLayout({
+            sample_hwpx: formatRef!,
+            injection_hwpx: styleRef!,
+            md_path: selected,
+            output_hwpx: outputHwpx,
+          });
+          log(`완료: ${r.path} (${r.bytes} bytes, ${r.sections_generated} 섹션 생성, ${r.headings_filled}/${r.headings_total} 내용 채움)`);
+          outPath = r.path;
+        } else {
+          // 하나만 지정: 기존 단일 템플릿 주입
+          const primaryTemplate = formatRef || styleRef!;
+          const mode = formatRef ? "양식 문서만" : "주입 문서만";
+          log(`HWPX 생성 (${mode}): ${primaryTemplate.split(/[\\/]/).pop()} ← ${selected.split(/[\\/]/).pop()}`);
+          const r = await api.injectFromMd({
+            template_hwpx: primaryTemplate,
+            md_path: selected,
+            output_hwpx: outputHwpx,
+          });
+          log(`완료: ${r.path} (${r.bytes} bytes, ${r.sections_replaced}/${r.md_sections_total} 섹션 매칭)`);
+          outPath = r.path;
+        }
+        addResult(outPath, "결과보고서 HWPX (템플릿)");
       } else {
         log(`HWPX 생성: ${selected} → 단순 변환 (템플릿 미지정)`);
         const r = await api.mdToHwpx({

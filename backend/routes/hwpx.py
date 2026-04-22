@@ -16,7 +16,7 @@ from backend.services.composer import compose_with_template_headings
 import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from doc_mcp.hwpx_vision.tools.template_inject import list_headings, inject_to_template
+from doc_mcp.hwpx_vision.tools.template_inject import list_headings, inject_to_template, inject_with_layout
 from doc_mcp.hwpx_vision.lib.md_sections import parse_md_sections, match_to_template_headings
 
 
@@ -154,6 +154,77 @@ async def template_draft_md(body: DraftMdBody):
             yield f"event: error\ndata: {type(e).__name__}: {e}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+class InjectWithLayoutBody(BaseModel):
+    sample_hwpx: str          # 양식 문서 (베이스라인 레이아웃)
+    injection_hwpx: str       # 주입 문서 (헤딩 구조 소스)
+    md_path: str              # MD 본문
+    output_hwpx: str
+
+
+@router.post("/template/inject-with-layout")
+def template_inject_with_layout(body: InjectWithLayoutBody) -> dict[str, Any]:
+    """
+    2-박스 모드 (Plan B):
+      - 양식 문서 = 베이스라인 레이아웃 (표지/헤더/첫 섹션 블록을 템플릿으로)
+      - 주입 문서 = 헤딩 구조 소스 (이 문서의 헤딩 리스트로 섹션을 N번 복제)
+      - MD = 본문 텍스트
+    """
+    if not Path(body.sample_hwpx).exists():
+        raise HTTPException(404, "양식 문서 없음")
+    if not Path(body.injection_hwpx).exists():
+        raise HTTPException(404, "주입 문서 없음")
+    if not Path(body.md_path).exists():
+        raise HTTPException(404, "MD 없음")
+
+    md_text = Path(body.md_path).read_text(encoding="utf-8")
+    md_sections = parse_md_sections(md_text)
+
+    try:
+        injection_headings = list_headings(body.injection_hwpx)
+    except Exception as e:
+        raise HTTPException(500, f"주입 문서 헤딩 추출 실패: {e}")
+
+    import re as _re
+    toc_tail = _re.compile(r"\s+\d{1,3}\s*$")
+    seen: set[str] = set()
+    heading_list: list[str] = []
+    for h in injection_headings:
+        if h["body_paragraphs"] < 3:
+            continue
+        norm = toc_tail.sub("", h["heading"]).strip()
+        if norm in seen:
+            continue
+        seen.add(norm)
+        heading_list.append(norm)
+
+    if not heading_list:
+        raise HTTPException(400, "주입 문서에서 유효한 헤딩을 찾을 수 없습니다 (body_paragraphs>=3 기준).")
+
+    heading_to_body = match_to_template_headings(md_sections, heading_list)
+    for h in heading_list:
+        heading_to_body.setdefault(h, "")
+
+    try:
+        result = inject_with_layout(
+            sample_hwpx=body.sample_hwpx,
+            headings=heading_list,
+            heading_to_body=heading_to_body,
+            output_hwpx=body.output_hwpx,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"레이아웃 주입 실패: {e}")
+
+    filled = sum(1 for h in heading_list if heading_to_body.get(h))
+    return {
+        **result,
+        "headings_total": len(heading_list),
+        "headings_filled": filled,
+        "md_sections_total": len(md_sections),
+    }
 
 
 class InjectFromMdBody(BaseModel):

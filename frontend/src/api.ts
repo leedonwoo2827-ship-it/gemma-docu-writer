@@ -130,6 +130,11 @@ export const api = {
       `/api/template/inject-from-md`,
       { method: "POST", body: JSON.stringify(body) }
     ),
+  injectWithLayout: (body: { sample_hwpx: string; injection_hwpx: string; md_path: string; output_hwpx: string }) =>
+    j<{ path: string; bytes: number; sections_generated: number; headings_total: number; headings_filled: number; md_sections_total: number }>(
+      `/api/template/inject-with-layout`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
   pptxInjectFromMd: (body: { template_pptx: string; md_path: string; output_pptx: string }) =>
     j<{ path: string; bytes: number; slides_replaced: number; matched_titles: string[]; md_sections_total: number }>(
       `/api/pptx/template/inject-from-md`,

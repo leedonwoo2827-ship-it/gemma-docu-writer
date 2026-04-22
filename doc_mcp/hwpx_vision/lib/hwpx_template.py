@@ -355,6 +355,200 @@ def _strip_and_clear(p: Optional[etree._Element]) -> Optional[etree._Element]:
     return p
 
 
+def _find_heading_index(root: etree._Element, start: int = 0) -> Optional[int]:
+    """루트의 직계 자식 중 start 이후 첫 헤딩 단락의 인덱스를 찾는다 (표 내부 제외)."""
+    children = list(root)
+    for i in range(start, len(children)):
+        elem = children[i]
+        if etree.QName(elem).localname != "p":
+            continue
+        if _is_inside_table(elem):
+            continue
+        txt = _paragraph_text(elem)
+        if txt and _is_heading(txt):
+            return i
+    return None
+
+
+SAMPLE_META_KEYWORDS = ("문서 제목", "작성기관", "작성자", "작성일", "목차")
+
+
+def _find_section_start_loose(root: etree._Element) -> Optional[int]:
+    """
+    양식 문서용 완화된 섹션 시작 감지.
+    자동 번호(paraPrIDRef 기반)로 hp:t 에 '1.' 숫자가 없어도 찾을 수 있도록.
+
+    우선순위:
+    1. _is_heading 으로 엄격 매치
+    2. 표지/작성자 메타 키워드 스킵 후, styleIDRef/paraPrIDRef 있는 짧은 단락 (30자 이하)
+    """
+    strict = _find_heading_index(root, 0)
+    if strict is not None:
+        return strict
+
+    children = list(root)
+    for i, elem in enumerate(children):
+        if etree.QName(elem).localname != "p":
+            continue
+        if _is_inside_table(elem):
+            continue
+        txt = _paragraph_text(elem)
+        if not txt:
+            continue
+        if any(kw in txt for kw in SAMPLE_META_KEYWORDS):
+            continue
+        if len(txt) > 30:
+            continue
+        if "paraPrIDRef" in elem.attrib or "styleIDRef" in elem.attrib:
+            return i
+    return None
+
+
+def _find_next_section_start_loose(root: etree._Element, start: int, first_heading_para_pr_ref: Optional[str]) -> Optional[int]:
+    """
+    양식 내 '다음 섹션 시작' 감지. 보통 양식은 섹션 1개이므로 None 이 정상.
+    동일한 paraPrIDRef 를 가진 다른 짧은 단락이 있으면 그걸 다음 섹션 시작으로 본다.
+    """
+    strict = _find_heading_index(root, start)
+    if strict is not None:
+        return strict
+    if not first_heading_para_pr_ref:
+        return None
+    children = list(root)
+    for i in range(start, len(children)):
+        elem = children[i]
+        if etree.QName(elem).localname != "p":
+            continue
+        if _is_inside_table(elem):
+            continue
+        if elem.get("paraPrIDRef") == first_heading_para_pr_ref:
+            txt = _paragraph_text(elem)
+            if txt and len(txt) <= 30 and not any(kw in txt for kw in SAMPLE_META_KEYWORDS):
+                return i
+    return None
+
+
+def _clone_block(elements: list[etree._Element]) -> list[etree._Element]:
+    return [etree.fromstring(etree.tostring(e)) for e in elements]
+
+
+def render_with_baseline_layout(
+    sample_hwpx: str,
+    headings: list[str],
+    heading_to_body: dict[str, str],
+    output_hwpx: str,
+) -> dict:
+    """
+    양식 문서를 베이스라인으로 사용해 헤딩 N개짜리 결과 HWPX 생성.
+
+    양식의 첫 번째 헤딩 ~ 다음 헤딩 직전(또는 문서 끝) 까지를 '섹션 블록'으로 식별.
+    이 블록을 headings 리스트 수만큼 복제하고, 각 복제본의:
+      - 헤딩 단락 텍스트 → headings[i]
+      - 본문 단락 텍스트 → heading_to_body[headings[i]] 의 줄 단위
+      - 표·캡션·이미지 등 그 외 요소는 양식 그대로 유지 (placeholder 역할)
+
+    양식의 표지/헤더/작성자/푸터(첫 헤딩 이전) 는 건드리지 않음.
+    """
+    import copy
+    import tempfile
+    import zipfile
+
+    if not Path(sample_hwpx).exists():
+        raise FileNotFoundError(sample_hwpx)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        _extract(sample_hwpx, tmp)
+        section_xmls = _find_all_section_xmls(tmp)
+
+        target_xml: Optional[Path] = None
+        first_idx: Optional[int] = None
+        for sx in section_xmls:
+            tree = etree.parse(str(sx))
+            root = tree.getroot()
+            idx = _find_section_start_loose(root)
+            if idx is not None:
+                target_xml = sx
+                first_idx = idx
+                break
+
+        if target_xml is None or first_idx is None:
+            raise RuntimeError("양식 문서에서 섹션 시작점을 찾을 수 없음. 헤딩이나 스타일이 지정된 짧은 단락이 필요.")
+
+        tree = etree.parse(str(target_xml))
+        root = tree.getroot()
+        children = list(root)
+
+        first_para_pr_ref = children[first_idx].get("paraPrIDRef")
+        next_idx = _find_next_section_start_loose(root, first_idx + 1, first_para_pr_ref)
+        end_idx = next_idx if next_idx is not None else len(children)
+
+        template_block = children[first_idx:end_idx]
+
+        # 원본 블록을 루트에서 제거 (insert_pos 유지)
+        for elem in template_block:
+            root.remove(elem)
+
+        insert_pos = first_idx
+        for heading_text in headings:
+            cloned = _clone_block(template_block)
+            for el in cloned:
+                _strip_layout_cache(el)
+                # paraPrIDRef / styleIDRef 는 보존 → 양식의 자동 번호(1→2→3…) 유지
+
+            # 첫 단락 = 헤딩
+            heading_p = cloned[0]
+            _set_paragraph_text(heading_p, heading_text)
+
+            # 나머지 단락들: body 채움. 표 내부 단락은 건드리지 않음.
+            body_text = heading_to_body.get(heading_text, "").strip()
+            body_lines = [ln for ln in body_text.split("\n") if ln.strip()]
+
+            body_ps: list[etree._Element] = []
+            for el in cloned[1:]:
+                if etree.QName(el).localname != "p":
+                    continue
+                if _is_inside_table(el):
+                    continue
+                body_ps.append(el)
+
+            if body_ps:
+                for i, line in enumerate(body_lines):
+                    if i < len(body_ps):
+                        _set_paragraph_text(body_ps[i], line)
+                    else:
+                        new_p = etree.fromstring(etree.tostring(body_ps[-1]))
+                        _strip_layout_cache(new_p)
+                        _set_paragraph_text(new_p, line)
+                        # heading 바로 뒤가 아니라, 마지막 body_p 다음에 넣어야 순서 유지
+                        last_body_p = body_ps[-1]
+                        parent = last_body_p.getparent()
+                        if parent is not None:
+                            last_body_p.addnext(new_p)
+                        body_ps.append(new_p)
+                        # cloned 리스트에도 추가 (insert 순서 유지)
+                        idx_last = cloned.index(last_body_p)
+                        cloned.insert(idx_last + 1, new_p)
+
+                # body_lines 보다 body_ps 가 많으면 남는 단락 비움
+                for j in range(len(body_lines), len(body_ps)):
+                    _set_paragraph_text(body_ps[j], "")
+
+            for offset, elem in enumerate(cloned):
+                root.insert(insert_pos + offset, elem)
+            insert_pos += len(cloned)
+
+        tree.write(str(target_xml), xml_declaration=True, encoding="UTF-8", standalone=True)
+        _repack(tmp, output_hwpx)
+
+    size = Path(output_hwpx).stat().st_size
+    return {
+        "path": output_hwpx,
+        "bytes": size,
+        "sections_generated": len(headings),
+        "block_size": len(template_block),
+    }
+
+
 def render_from_template(
     template_hwpx: str,
     section_to_body: dict[str, str],
