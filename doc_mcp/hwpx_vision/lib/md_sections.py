@@ -7,6 +7,31 @@ import re
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 
+def fix_heading_level_jumps(md_text: str) -> str:
+    """
+    헤딩 레벨이 부모보다 2단계 이상 점프하는 경우 가까운 레벨로 보정.
+    예) '#' → '###' 점프 시 '###' 를 '##' 로 당김. LLM 이 ## 를 빠뜨렸을 때 방어.
+    """
+    lines = md_text.split("\n")
+    out: list[str] = []
+    last_level = 0
+    for ln in lines:
+        m = re.match(r"^(#{1,6})\s+(.+)$", ln)
+        if m:
+            lvl = len(m.group(1))
+            if last_level > 0 and lvl > last_level + 1:
+                # 점프 발생 → 부모+1 로 보정
+                lvl = last_level + 1
+                out.append("#" * lvl + " " + m.group(2))
+                last_level = lvl
+                continue
+            last_level = lvl
+            out.append(ln)
+        else:
+            out.append(ln)
+    return "\n".join(out)
+
+
 def promote_headings_to_top(md_text: str) -> str:
     """
     가장 얕은 헤딩 레벨이 `#` 가 되도록 전체 헤딩을 위로 당긴다.

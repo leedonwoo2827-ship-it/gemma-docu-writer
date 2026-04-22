@@ -11,7 +11,7 @@ from backend.services.composer import compose_report
 import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from doc_mcp.hwpx_vision.lib.md_sections import promote_headings_to_top
+from doc_mcp.hwpx_vision.lib.md_sections import promote_headings_to_top, fix_heading_level_jumps
 
 
 router = APIRouter(prefix="/api", tags=["report"])
@@ -57,7 +57,8 @@ async def compose(body: ComposeBody):
                 collected.append(chunk)
                 safe = chunk.replace("\r", "").replace("\n", "\\n")
                 yield f"data: {safe}\n\n"
-            final_md = promote_headings_to_top("".join(collected))
+            raw_md = "".join(collected)
+            final_md = promote_headings_to_top(fix_heading_level_jumps(raw_md))
             out.write_text(final_md, encoding="utf-8")
             yield f"event: done\ndata: {out}\n\n"
         except Exception as e:
