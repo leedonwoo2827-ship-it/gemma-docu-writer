@@ -126,14 +126,15 @@ export default function App() {
 
   const compose = async () => {
     const mds = effectiveMdSelection();
-    if (mds.length < 2) {
-      log(`MD 최소 2개 필요 (현재 ${mds.length}개). Ctrl+클릭으로 추가 선택.`);
-      return;
-    }
     const tplLower = (styleRef || "").toLowerCase();
     const isHwpx = tplLower.endsWith(".hwpx");
     const isPptx = tplLower.endsWith(".pptx");
     const hasTemplate = isHwpx || isPptx;
+    const minMd = hasTemplate ? 1 : 2;
+    if (mds.length < minMd) {
+      log(`MD 최소 ${minMd}개 필요 (현재 ${mds.length}개). ${hasTemplate ? "" : "Ctrl+클릭으로 추가 선택. "}`);
+      return;
+    }
 
     const ts = timestamp();
     const outName = hasTemplate
@@ -319,7 +320,7 @@ export default function App() {
         <div className="spacer" />
         <button
           onClick={compose}
-          disabled={effectiveMdSelection().length < 2}
+          disabled={effectiveMdSelection().length < (styleRef ? 1 : 2)}
           title={
             styleRef
               ? "선택된 MD들 + 템플릿 헤딩 구조 → 구조화된 초안 MD (LLM)"
