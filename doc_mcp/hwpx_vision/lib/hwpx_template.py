@@ -512,9 +512,9 @@ def render_with_baseline_layout(
             _set_paragraph_text(heading_p, heading_text)
 
             # 나머지 단락들: body 채움. 표 내부 단락은 건드리지 않음.
-            # MD 라인의 선두 기호(○/-/□ 등) 제거 → 템플릿 단락의 자동 기호 렌더와 이중 표기 방지.
+            # MD 라인의 기호는 그대로 둠 (양식의 단락 스타일에 자동 기호가 없다는 전제).
             body_text = heading_to_body.get(heading_text, "").strip()
-            body_lines = [_strip_leading_marker(ln) for ln in body_text.split("\n") if ln.strip()]
+            body_lines = [ln for ln in body_text.split("\n") if ln.strip()]
 
             body_ps: list[etree._Element] = []
             for el in cloned[1:]:
