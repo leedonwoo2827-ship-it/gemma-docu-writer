@@ -124,7 +124,8 @@ def template_composer_user_prompt(
     lines: list[str] = []
     for h in headings:
         indent = "  " * max(0, h["level"] - 1)
-        marker = {1: "##", 2: "###", 3: "####", 4: "#####", 5: "######"}.get(h["level"], "#####")
+        # 레벨 → MD # 개수 (L1=#, L2=##, L3=###, L4=####, L5=#####, L6=######)
+        marker = {1: "#", 2: "##", 3: "###", 4: "####", 5: "#####", 6: "######"}.get(h["level"], "######")
         body_hint = f"  [본문 있음, {h['body_paragraphs']}단락 분량]" if h.get("body_paragraphs", 0) >= 3 else "  [범주/목차, 본문 짧거나 없음]"
         lines.append(f"{indent}- {marker} {h['heading']}{body_hint}")
     hs = "\n".join(lines)
