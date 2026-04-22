@@ -44,9 +44,10 @@ def parse_md_sections(md_text: str, section_level: int | None = None) -> dict[st
                 current_heading = m.group(2).strip()
                 current_body = []
                 continue
-            # 더 깊은 레벨 헤딩 → 본문 텍스트로 (# 접두사 제거, 내용만)
+            # 더 깊은 레벨 헤딩 → 본문 텍스트로 이동하되, # 접두사는 유지해서
+            # 렌더러가 레벨을 판단할 수 있게 한다.
             if current_heading is not None:
-                current_body.append(m.group(2).strip())
+                current_body.append(raw.rstrip())
             continue
         if current_heading is not None:
             current_body.append(raw)

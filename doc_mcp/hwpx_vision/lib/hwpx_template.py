@@ -171,26 +171,44 @@ KNOWN_MARKERS = ("○", "•", "·", "△", "▲", "※", "◦", "–", "—", "
 CIRCLED_DIGITS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 
 
+MD_LEVEL_TO_MARKER = {
+    1: "L1_NUM",
+    2: "L1_NUM",
+    3: "L2_HAN",
+    4: "L3_UPPER",
+    5: "L4_PAREN",
+    6: "L5_CIRCLED",
+}
+
+
 def _classify_line_marker(text: str) -> str:
     """
     한 줄의 마커 유형을 분류해 일관된 키로 반환.
     매칭된 양식 단락을 찾는 데 사용.
+
+    우선순위:
+    1. MD 헤딩 접두사(`#` 개수) → 해당 레벨의 양식 단락으로 매핑 (사용자 의도)
+    2. 텍스트 선두 패턴/기호 (1./가./A./(1)/①/i./○/-)
     """
     if not text:
         return "PLAIN"
+    md_m = re.match(r"^\s*(#{1,6})\s+(.+)$", text)
+    if md_m:
+        level = len(md_m.group(1))
+        return MD_LEVEL_TO_MARKER.get(level, "L5_CIRCLED")
     s = text.lstrip()
     if re.match(r"^\d+\.\s+", s):
-        return "L1_NUM"          # 1. xxx
+        return "L1_NUM"
     if re.match(r"^[가-힣]\.\s+", s):
-        return "L2_HAN"          # 가. xxx
+        return "L2_HAN"
     if re.match(r"^[A-Z]\.\s+", s):
-        return "L3_UPPER"        # A. xxx
+        return "L3_UPPER"
     if re.match(r"^\([가-힣\d]\)\s+", s):
-        return "L4_PAREN"        # (1) / (가)
+        return "L4_PAREN"
     if s and s[0] in CIRCLED_DIGITS:
-        return "L5_CIRCLED"      # ① xxx
+        return "L5_CIRCLED"
     if re.match(r"^[ivxIVX]+\.\s+", s):
-        return "L6_ROMAN"        # i. xxx / I. xxx
+        return "L6_ROMAN"
     for m in ("○", "•", "·", "◦"):
         if s.startswith(m):
             return "BULLET_CIRCLE"
@@ -205,6 +223,12 @@ def _classify_line_marker(text: str) -> str:
     if s.startswith("-") or s.startswith("–") or s.startswith("—"):
         return "DASH"
     return "PLAIN"
+
+
+def _strip_md_heading_prefix(text: str) -> str:
+    """MD 헤딩 접두사 `####` 등을 텍스트에서 제거. 본문 주입 전 호출."""
+    m = re.match(r"^\s*#{1,6}\s+(.+)$", text)
+    return m.group(1).strip() if m else text
 
 
 def _strip_leading_marker(text: str) -> str:
@@ -599,7 +623,7 @@ def render_with_baseline_layout(
                     continue
                 new_p = etree.fromstring(etree.tostring(src))
                 _strip_layout_cache(new_p)
-                _set_paragraph_text(new_p, line)
+                _set_paragraph_text(new_p, _strip_md_heading_prefix(line))
                 section_elems.append(new_p)
 
             section_elems = _strip_tables_from_block(section_elems)
