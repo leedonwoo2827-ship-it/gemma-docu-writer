@@ -350,41 +350,41 @@ export default function App() {
           </span>
         )}
         <div className="spacer" />
+        {/* 📝 MD 합성: HWPX·PPTX 공통 전처리 — 탭 무관 항상 노출 */}
+        <button
+          onClick={compose}
+          disabled={effectiveMdSelection().length < (styleRef ? 1 : 2)}
+          title={
+            styleRef
+              ? "선택된 MD들 + 템플릿 헤딩 구조 → 구조화된 초안 MD (LLM). 결과 MD 는 HWPX 생성·PPTX 변환 모두에 사용 가능."
+              : "선택된 MD들을 1개 MD로 합성 (LLM). 결과 MD 는 HWPX 생성·PPTX 변환 모두에 사용 가능."
+          }
+        >
+          📝 MD 합성 ({effectiveMdSelection().length})
+          {styleRef && <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>}
+        </button>
+        {/* 🎯 HWPX 생성: HWPX 탭에서만 */}
         {activeTab === "hwpx" && (
-          <>
-            <button
-              onClick={compose}
-              disabled={effectiveMdSelection().length < (styleRef ? 1 : 2)}
-              title={
-                styleRef
-                  ? "선택된 MD들 + 템플릿 헤딩 구조 → 구조화된 초안 MD (LLM)"
-                  : "선택된 MD들을 1개 MD로 합성 (LLM)"
-              }
-            >
-              📝 MD 합성 ({effectiveMdSelection().length})
-              {styleRef && <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>}
-            </button>
-            <button
-              onClick={runHwpxFromSelected}
-              disabled={
-                !selected ||
-                !selected.toLowerCase().endsWith(".md") ||
-                (!!styleRef && !styleRef.toLowerCase().endsWith(".hwpx"))
-              }
-              title={
-                styleRef && styleRef.toLowerCase().endsWith(".hwpx")
-                  ? "현재 선택된 MD + 템플릿 HWPX → 최종 HWPX (LLM 없음)"
-                  : styleRef
-                  ? "템플릿이 HWPX가 아님 — HWPX 템플릿으로 바꾸세요"
-                  : "현재 선택된 MD → 단순 HWPX (템플릿 없이)"
-              }
-            >
-              🎯 HWPX 생성
-              {styleRef && styleRef.toLowerCase().endsWith(".hwpx") && (
-                <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>
-              )}
-            </button>
-          </>
+          <button
+            onClick={runHwpxFromSelected}
+            disabled={
+              !selected ||
+              !selected.toLowerCase().endsWith(".md") ||
+              (!!styleRef && !styleRef.toLowerCase().endsWith(".hwpx"))
+            }
+            title={
+              styleRef && styleRef.toLowerCase().endsWith(".hwpx")
+                ? "현재 선택된 MD + 템플릿 HWPX → 최종 HWPX (LLM 없음)"
+                : styleRef
+                ? "템플릿이 HWPX가 아님 — HWPX 템플릿으로 바꾸세요"
+                : "현재 선택된 MD → 단순 HWPX (템플릿 없이)"
+            }
+          >
+            🎯 HWPX 생성
+            {styleRef && styleRef.toLowerCase().endsWith(".hwpx") && (
+              <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>
+            )}
+          </button>
         )}
         <button onClick={() => setSettingsOpen(true)}>⚙ 설정</button>
       </div>
