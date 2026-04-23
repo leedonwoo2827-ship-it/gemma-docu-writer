@@ -469,6 +469,11 @@ def _strip_auto_numbering(p: etree._Element) -> None:
     for attr in ("paraPrIDRef", "styleIDRef"):
         if attr in p.attrib:
             del p.attrib[attr]
+    _strip_numbering_elements_only(p)
+
+
+def _strip_numbering_elements_only(p: etree._Element) -> None:
+    """paraPrIDRef/styleIDRef 는 유지. 단락 내부 numPr/autoNumFormat 만 제거."""
     for local in ("numPr", "autoNumFormat", "numbering", "listLevel"):
         for el in p.iter():
             if etree.QName(el).localname == local:
@@ -476,6 +481,50 @@ def _strip_auto_numbering(p: etree._Element) -> None:
                 if parent is not None:
                     parent.remove(el)
                 break
+
+
+def _patch_heading_paraPr(
+    tmp_dir: str,
+    para_pr_id: str,
+    prev_pt: Optional[float] = None,
+    next_pt: Optional[float] = None,
+    disable_auto_number: bool = True,
+) -> None:
+    """
+    양식 header.xml 의 paraPr 를 수정:
+      - disable_auto_number=True: heading type=NUMBER 를 NONE 으로 (자동 번호 해제)
+      - prev_pt/next_pt 지정 시에만 margin 오버라이드 (1pt = 100 HWPUNIT).
+        None 이면 양식 원본 margin 그대로 유지.
+    tmp 디렉토리에서만 수정하므로 원본 양식 파일에는 영향 없음.
+    """
+    header = Path(tmp_dir) / "Contents" / "header.xml"
+    if not header.exists():
+        return
+    tree = etree.parse(str(header))
+    root = tree.getroot()
+    for pp in root.iter():
+        if etree.QName(pp).localname != "paraPr":
+            continue
+        if pp.get("id") != para_pr_id:
+            continue
+        if disable_auto_number:
+            for h in pp:
+                if etree.QName(h).localname == "heading":
+                    h.set("type", "NONE")
+                    h.set("idRef", "0")
+                    h.set("level", "0")
+        if prev_pt is not None or next_pt is not None:
+            for m in pp:
+                if etree.QName(m).localname != "margin":
+                    continue
+                for mc in m:
+                    tag = etree.QName(mc).localname
+                    if tag == "prev" and prev_pt is not None:
+                        mc.set("value", str(int(prev_pt * 100)))
+                    elif tag == "next" and next_pt is not None:
+                        mc.set("value", str(int(next_pt * 100)))
+        break
+    tree.write(str(header), xml_declaration=True, encoding="UTF-8", standalone=True)
 
 
 def _strip_and_clear(p: Optional[etree._Element]) -> Optional[etree._Element]:
@@ -643,6 +692,13 @@ def render_with_baseline_layout(
 
         template_block = children[first_idx:end_idx]
 
+        # L1 헤딩 단락의 paraPrIDRef 를 양식 그대로 유지하기 위해,
+        # 해당 paraPr 의 heading type(NUMBER) 만 NONE 으로 해제하여
+        # "1. 1.1 1.2" 자동 번호 중복을 방지 (margin·들여쓰기·폰트 스타일은 양식 원본 유지).
+        l1_para_pr_id = template_block[0].get("paraPrIDRef") if len(template_block) > 0 else None
+        if l1_para_pr_id:
+            _patch_heading_paraPr(tmp, l1_para_pr_id, disable_auto_number=True)
+
         # 원본 블록을 루트에서 제거 (insert_pos 유지)
         for elem in template_block:
             root.remove(elem)
@@ -678,7 +734,9 @@ def render_with_baseline_layout(
         for heading_text in headings:
             heading_clone = etree.fromstring(etree.tostring(template_block[0]))
             _strip_layout_cache(heading_clone)
-            _strip_auto_numbering(heading_clone)
+            # paraPrIDRef/styleIDRef 는 유지 → 양식 margin·들여쓰기·글자 스타일 계승.
+            # 양식 paraPr 는 위에서 이미 자동 번호 해제됨 → numPr 요소만 제거.
+            _strip_numbering_elements_only(heading_clone)
             _set_paragraph_text(heading_clone, heading_text)
 
             body_text = heading_to_body.get(heading_text, "").strip()

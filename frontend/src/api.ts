@@ -135,65 +135,27 @@ export const api = {
       `/api/template/inject-with-layout`,
       { method: "POST", body: JSON.stringify(body) }
     ),
-  pptxInjectFromMd: (body: { template_pptx: string; md_path: string; output_pptx: string }) =>
-    j<{ path: string; bytes: number; slides_replaced: number; matched_titles: string[]; md_sections_total: number }>(
-      `/api/pptx/template/inject-from-md`,
-      { method: "POST", body: JSON.stringify(body) }
-    ),
-  pptxHeadings: (template_pptx: string) =>
-    j<{ headings: { heading: string; level: number; body_paragraphs: number; _slide_index: number; _has_table: boolean }[]; slides_raw: any[] }>(
-      `/api/pptx/template/headings`,
-      { method: "POST", body: JSON.stringify({ template_pptx }) }
-    ),
+
+  pptxConvert: (body: {
+    template_pptx: string;
+    md_path: string;
+    output_pptx?: string;
+    dry_run?: boolean;
+    keep_unused?: boolean;
+  }) =>
+    j<{
+      output_path: string;
+      bytes: number;
+      slides_count: number;
+      slides_final: number[];
+      slides_dropped: number[];
+      headings_matched: string[];
+      tables_matched: { md_idx: number; template_slide: number; md_headers: string[]; score: number }[];
+      tables_unmatched: number[];
+      plan_text: string;
+      dry_run: boolean;
+    }>(`/api/pptx/convert`, { method: "POST", body: JSON.stringify(body) }),
 };
-
-export function pptxDraftMdSSE(
-  body: { template_pptx: string; output_md: string; source_md_paths: string[] },
-  onStart: (totalHeadings: number) => void,
-  onChunk: (text: string) => void,
-  onDone: (outPath: string) => void,
-  onError: (err: string) => void
-): () => void {
-  const ctrl = new AbortController();
-  (async () => {
-    try {
-      const r = await fetch(`/api/pptx/template/draft-md`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
-      if (!r.body) throw new Error("no stream");
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() || "";
-        for (const p of parts) {
-          const lines = p.split("\n");
-          let event = "message";
-          let data = "";
-          for (const ln of lines) {
-            if (ln.startsWith("event:")) event = ln.slice(6).trim();
-            else if (ln.startsWith("data:")) data += ln.slice(5).trim();
-          }
-          if (event === "start") onStart(Number(data));
-          else if (event === "done") onDone(data);
-          else if (event === "error") onError(data);
-          else onChunk(data.replace(/\\n/g, "\n"));
-        }
-      }
-    } catch (e: any) {
-      onError(e.message || String(e));
-    }
-  })();
-  return () => ctrl.abort();
-}
-
 export function draftMdSSE(
   body: {
     template_hwpx: string;

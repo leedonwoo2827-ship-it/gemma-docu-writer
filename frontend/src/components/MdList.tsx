@@ -1,7 +1,16 @@
 import { FileNode } from "../api";
 
+// 사용자용 MD 만 수집.
+// 숨김 대상: `templates/specs/slide_NNNN.md` (PPTX 규격서) 등 templates 하위 MD.
+function isHiddenMd(node: FileNode): boolean {
+  const p = node.path.replace(/\\/g, "/");
+  if (/\/templates\/specs\/slide_\d+\.md$/i.test(p)) return true;
+  if (/\/templates\//i.test(p)) return true;
+  return false;
+}
+
 function collectMd(node: FileNode, out: FileNode[]): void {
-  if (node.type === "file" && node.ext === ".md") out.push(node);
+  if (node.type === "file" && node.ext === ".md" && !isHiddenMd(node)) out.push(node);
   if (node.children) for (const c of node.children) collectMd(c, out);
 }
 

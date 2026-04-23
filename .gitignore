@@ -35,6 +35,8 @@ _context/*.hwpx
 _context/*.pdf
 _context/*.docx
 _context/*.md
+_context/*.pptx
 _context/*.tmp
+_context/pptx_projects/
 .style_cache/
 .tmp_inspect/

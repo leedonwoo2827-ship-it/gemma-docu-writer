@@ -8,7 +8,8 @@ import MdDropZone from "./components/MdDropZone";
 import MdList from "./components/MdList";
 import InjectTargetPanel from "./components/InjectMdPanel";
 import StyleFormatPanel from "./components/StyleFormatPanel";
-import { api, composeSSE, draftMdSSE, pptxDraftMdSSE, FileNode } from "./api";
+import PptxSimpleCard from "./components/PptxSimpleCard";
+import { api, composeSSE, draftMdSSE, FileNode } from "./api";
 
 const DEFAULT_ROOT = "_context";
 
@@ -47,6 +48,9 @@ export default function App() {
   const [treeErr, setTreeErr] = useState<string | null>(null);
   const [styleRef, setStyleRef] = useState<string | null>(() => localStorage.getItem("styleRef"));
   const [formatRef, setFormatRef] = useState<string | null>(() => localStorage.getItem("formatRef"));
+  const [activeTab, setActiveTab] = useState<"hwpx" | "pptx">(
+    () => (localStorage.getItem("activeTab") as "hwpx" | "pptx") || "hwpx"
+  );
 
   useEffect(() => {
     if (styleRef) localStorage.setItem("styleRef", styleRef);
@@ -57,6 +61,10 @@ export default function App() {
     if (formatRef) localStorage.setItem("formatRef", formatRef);
     else localStorage.removeItem("formatRef");
   }, [formatRef]);
+
+  useEffect(() => {
+    localStorage.setItem("activeTab", activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!workDir) return;
@@ -135,8 +143,7 @@ export default function App() {
     const mds = effectiveMdSelection();
     const tplLower = (styleRef || "").toLowerCase();
     const isHwpx = tplLower.endsWith(".hwpx");
-    const isPptx = tplLower.endsWith(".pptx");
-    const hasTemplate = isHwpx || isPptx;
+    const hasTemplate = isHwpx;
     const minMd = hasTemplate ? 1 : 2;
     if (mds.length < minMd) {
       log(`MD 최소 ${minMd}개 필요 (현재 ${mds.length}개). ${hasTemplate ? "" : "Ctrl+클릭으로 추가 선택. "}`);
@@ -150,7 +157,7 @@ export default function App() {
     const outPath = `${workDir}/${outName}`.replace(/\\/g, "/");
 
     setStreamBuf("");
-    log(`합성 시작 (${mds.length}개 MD${hasTemplate ? `, ${isPptx ? "PPTX" : "HWPX"} 템플릿 구조 반영` : ""})`);
+    log(`합성 시작 (${mds.length}개 MD${hasTemplate ? ", HWPX 템플릿 구조 반영" : ""})`);
     beginBusy(hasTemplate ? "템플릿 초안 MD 생성" : "결과보고서 합성");
 
     const onChunk = (chunk: string) => {
@@ -171,15 +178,7 @@ export default function App() {
       endBusy();
     };
 
-    if (isPptx) {
-      pptxDraftMdSSE(
-        { template_pptx: styleRef!, output_md: outPath, source_md_paths: mds },
-        (n) => log(`슬라이드 ${n}개 기반 작성`),
-        onChunk,
-        onDone,
-        onError
-      );
-    } else if (isHwpx) {
+    if (isHwpx) {
       draftMdSSE(
         { template_hwpx: styleRef!, output_md: outPath, source_md_paths: mds },
         (n) => log(`템플릿 헤딩 ${n}개 기반 작성`),
@@ -207,34 +206,6 @@ export default function App() {
     await convertHwpx(out);
   };
 
-  const runPptxFromSelected = async () => {
-    if (!selected || !selected.toLowerCase().endsWith(".md")) {
-      log("PPTX로 만들 MD를 먼저 선택하세요.");
-      return;
-    }
-    if (!styleRef || !styleRef.toLowerCase().endsWith(".pptx")) {
-      log("PPTX 템플릿이 지정되지 않았습니다. PPTX 파일 우클릭 → '템플릿으로 지정'");
-      return;
-    }
-    const ts = timestamp();
-    const out = selected.replace(/\.md$/i, `_${ts}.pptx`);
-    beginBusy("PPTX 생성 (템플릿 주입)");
-    log(`PPTX 생성: ${selected} → ${styleRef}`);
-    try {
-      const r = await api.pptxInjectFromMd({
-        template_pptx: styleRef,
-        md_path: selected,
-        output_pptx: out,
-      });
-      log(`완료: ${r.path} (${r.bytes} bytes, ${r.slides_replaced}/${r.md_sections_total} 슬라이드 매칭)`);
-      addResult(r.path, "결과보고서 PPTX (템플릿)");
-      setRefreshKey((k) => k + 1);
-    } catch (e: any) {
-      log(`PPTX 실패: ${e.message || e}`);
-    } finally {
-      endBusy();
-    }
-  };
 
   const convertHwpx = async (outputHwpx: string) => {
     if (!selected) return;
@@ -293,54 +264,77 @@ export default function App() {
     const p = menu.path;
     const isHwpPdf = [".hwp", ".hwpx", ".pdf", ".docx"].includes(menu.ext || "");
     const isHwpx = menu.ext === ".hwpx";
-    const isPptx = menu.ext === ".pptx";
     const isMd = menu.ext === ".md";
     const mdCount = effectiveMdSelection().length;
-    return [
+
+    const items: Array<{ label: string; onClick: () => void; disabled: boolean }> = [
       {
         label: "MD로 변환",
         onClick: () => convertToMd(p),
         disabled: !isHwpPdf,
       },
-      {
-        label: `선택된 MD ${mdCount}개로 결과보고서 생성`,
-        onClick: compose,
-        disabled: mdCount < 2,
-      },
-      {
-        label: "HWPX로 변환 (현재 선택)",
-        onClick: () => convertHwpx(p.replace(/\.md$/i, ".hwpx")),
-        disabled: !isMd,
-      },
-      {
-        label: isHwpx
-          ? "🎯 이 HWPX를 글쓰기 주입 문서로 지정"
-          : isPptx
-          ? "🎯 이 PPTX를 글쓰기 주입 문서로 지정"
-          : "주입 문서는 HWPX/PPTX만 지정 가능",
-        onClick: () => {
-          setStyleRef(p);
-          log(`글쓰기 주입 문서 지정: ${p}`);
-        },
-        disabled: !(isHwpx || isPptx),
-      },
-      {
-        label: isHwpx
-          ? "📐 이 HWPX를 양식 문서로 지정 (디자인 주입)"
-          : "양식 문서는 HWPX만 지정 가능",
-        onClick: () => {
-          setFormatRef(p);
-          log(`양식 문서 지정: ${p}`);
-        },
-        disabled: !isHwpx,
-      },
     ];
-  }, [menu, multiSelected, selected, styleRef, formatRef]);
+
+    if (activeTab === "hwpx") {
+      items.push(
+        {
+          label: `선택된 MD ${mdCount}개로 결과보고서 생성`,
+          onClick: compose,
+          disabled: mdCount < 2,
+        },
+        {
+          label: "HWPX로 변환 (현재 선택)",
+          onClick: () => convertHwpx(p.replace(/\.md$/i, ".hwpx")),
+          disabled: !isMd,
+        },
+        {
+          label: isHwpx
+            ? "🎯 이 HWPX를 글쓰기 주입 문서로 지정"
+            : "주입 문서는 HWPX만 지정 가능",
+          onClick: () => {
+            setStyleRef(p);
+            log(`글쓰기 주입 문서 지정: ${p}`);
+          },
+          disabled: !isHwpx,
+        },
+        {
+          label: isHwpx
+            ? "📐 이 HWPX를 양식 문서로 지정 (디자인 주입)"
+            : "양식 문서는 HWPX만 지정 가능",
+          onClick: () => {
+            setFormatRef(p);
+            log(`양식 문서 지정: ${p}`);
+          },
+          disabled: !isHwpx,
+        }
+      );
+    }
+    // PPTX 탭에서는 별도 우클릭 항목 없음 (선택만으로 카드에 자동 등록)
+
+    return items;
+  }, [menu, multiSelected, selected, styleRef, formatRef, workDir, activeTab]);
+
+  const tabButtonStyle = (tab: string) => ({
+    padding: "4px 12px",
+    background: activeTab === tab ? "var(--accent)" : "transparent",
+    color: activeTab === tab ? "#000" : "var(--fg)",
+    border: "1px solid var(--border)",
+    borderBottom: activeTab === tab ? "2px solid var(--accent)" : "1px solid var(--border)",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: activeTab === tab ? 600 : 400,
+  });
 
   return (
     <div className="layout">
       <div className="topbar">
-        <div className="title">HWPX 결과보고서 작성툴</div>
+        <div className="title">결과보고서 작성툴</div>
+        <button style={tabButtonStyle("hwpx")} onClick={() => setActiveTab("hwpx")}>
+          📝 HWPX
+        </button>
+        <button style={tabButtonStyle("pptx")} onClick={() => setActiveTab("pptx")}>
+          🎨 PPTX
+        </button>
         <span className="badge prov">
           {provider === "ollama" ? "🖥️ Ollama" : "☁️ Gemini"}
         </span>
@@ -356,57 +350,42 @@ export default function App() {
           </span>
         )}
         <div className="spacer" />
-        <button
-          onClick={compose}
-          disabled={effectiveMdSelection().length < (styleRef ? 1 : 2)}
-          title={
-            styleRef
-              ? "선택된 MD들 + 템플릿 헤딩 구조 → 구조화된 초안 MD (LLM)"
-              : "선택된 MD들을 1개 MD로 합성 (LLM)"
-          }
-        >
-          📝 MD 합성 ({effectiveMdSelection().length})
-          {styleRef && <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>}
-        </button>
-        <button
-          onClick={runHwpxFromSelected}
-          disabled={
-            !selected ||
-            !selected.toLowerCase().endsWith(".md") ||
-            (!!styleRef && !styleRef.toLowerCase().endsWith(".hwpx"))
-          }
-          title={
-            styleRef && styleRef.toLowerCase().endsWith(".hwpx")
-              ? "현재 선택된 MD + 템플릿 HWPX → 최종 HWPX (LLM 없음)"
-              : styleRef
-              ? "템플릿이 HWPX가 아님 — HWPX 템플릿으로 바꾸세요"
-              : "현재 선택된 MD → 단순 HWPX (템플릿 없이)"
-          }
-        >
-          🎯 HWPX 생성
-          {styleRef && styleRef.toLowerCase().endsWith(".hwpx") && (
-            <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>
-          )}
-        </button>
-        <button
-          onClick={runPptxFromSelected}
-          disabled={
-            !selected ||
-            !selected.toLowerCase().endsWith(".md") ||
-            !styleRef ||
-            !styleRef.toLowerCase().endsWith(".pptx")
-          }
-          title={
-            styleRef && styleRef.toLowerCase().endsWith(".pptx")
-              ? "현재 선택된 MD + 템플릿 PPTX → 최종 PPTX (LLM 없음)"
-              : "PPTX 템플릿을 우클릭 → 템플릿으로 지정하세요"
-          }
-        >
-          🎨 PPTX 생성
-          {styleRef && styleRef.toLowerCase().endsWith(".pptx") && (
-            <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>
-          )}
-        </button>
+        {activeTab === "hwpx" && (
+          <>
+            <button
+              onClick={compose}
+              disabled={effectiveMdSelection().length < (styleRef ? 1 : 2)}
+              title={
+                styleRef
+                  ? "선택된 MD들 + 템플릿 헤딩 구조 → 구조화된 초안 MD (LLM)"
+                  : "선택된 MD들을 1개 MD로 합성 (LLM)"
+              }
+            >
+              📝 MD 합성 ({effectiveMdSelection().length})
+              {styleRef && <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>}
+            </button>
+            <button
+              onClick={runHwpxFromSelected}
+              disabled={
+                !selected ||
+                !selected.toLowerCase().endsWith(".md") ||
+                (!!styleRef && !styleRef.toLowerCase().endsWith(".hwpx"))
+              }
+              title={
+                styleRef && styleRef.toLowerCase().endsWith(".hwpx")
+                  ? "현재 선택된 MD + 템플릿 HWPX → 최종 HWPX (LLM 없음)"
+                  : styleRef
+                  ? "템플릿이 HWPX가 아님 — HWPX 템플릿으로 바꾸세요"
+                  : "현재 선택된 MD → 단순 HWPX (템플릿 없이)"
+              }
+            >
+              🎯 HWPX 생성
+              {styleRef && styleRef.toLowerCase().endsWith(".hwpx") && (
+                <span style={{ fontSize: 9, marginLeft: 4, color: "var(--accent)" }}>+템플릿</span>
+              )}
+            </button>
+          </>
+        )}
         <button onClick={() => setSettingsOpen(true)}>⚙ 설정</button>
       </div>
 
@@ -442,34 +421,47 @@ export default function App() {
           onSelect={onSelect}
           onContextMenu={(path, ext, x, y) => setMenu({ path, ext, x, y })}
         />
-        <InjectTargetPanel
-          templateHwpx={styleRef}
-          active={selected === styleRef}
-          onClear={() => {
-            setStyleRef(null);
-            log("글쓰기 주입 문서 해제됨");
-          }}
-          onSelect={() => {
-            if (styleRef) {
-              setSelected(styleRef);
-              setSelectedExt(".hwpx");
-            }
-          }}
-        />
-        <StyleFormatPanel
-          stylePath={formatRef}
-          active={selected === formatRef}
-          onClear={() => {
-            setFormatRef(null);
-            log("양식 문서 해제됨");
-          }}
-          onSelect={() => {
-            if (formatRef) {
-              setSelected(formatRef);
-              setSelectedExt(".hwpx");
-            }
-          }}
-        />
+        {activeTab === "hwpx" && (
+          <>
+            <InjectTargetPanel
+              templateHwpx={styleRef}
+              active={selected === styleRef}
+              onClear={() => {
+                setStyleRef(null);
+                log("글쓰기 주입 문서 해제됨");
+              }}
+              onSelect={() => {
+                if (styleRef) {
+                  setSelected(styleRef);
+                  setSelectedExt(".hwpx");
+                }
+              }}
+            />
+            <StyleFormatPanel
+              stylePath={formatRef}
+              active={selected === formatRef}
+              onClear={() => {
+                setFormatRef(null);
+                log("양식 문서 해제됨");
+              }}
+              onSelect={() => {
+                if (formatRef) {
+                  setSelected(formatRef);
+                  setSelectedExt(".hwpx");
+                }
+              }}
+            />
+          </>
+        )}
+        {activeTab === "pptx" && (
+          <PptxSimpleCard
+            selectedMd={selected && selected.toLowerCase().endsWith(".md") ? selected : null}
+            selectedPptx={selected && selected.toLowerCase().endsWith(".pptx") ? selected : null}
+            onLog={log}
+            onResult={(path, label) => addResult(path, label)}
+            onRefreshTree={() => setRefreshKey((k) => k + 1)}
+          />
+        )}
       </div>
 
       <div className="center">
