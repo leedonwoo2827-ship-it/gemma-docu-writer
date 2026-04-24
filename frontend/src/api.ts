@@ -152,10 +152,75 @@ export const api = {
       headings_matched: string[];
       tables_matched: { md_idx: number; template_slide: number; md_headers: string[]; score: number }[];
       tables_unmatched: number[];
+      body_blocks_matched: { heading: string; slide: number; block_count: number; chars: number }[];
+      body_blocks_unmapped: { heading: string; kind: string; reason: string; excerpt: string }[];
       plan_text: string;
       dry_run: boolean;
     }>(`/api/pptx/convert`, { method: "POST", body: JSON.stringify(body) }),
+  pptxAnalyze: (body: {
+    template_pptx: string;
+    output_pptx: string;
+    md_path?: string;
+    convert_result?: any;
+  }) =>
+    j<{
+      issues: any[];
+      has_issues: boolean;
+      issue_count: number;
+      issue_types: string[];
+      output_path: string;
+      slides_in_output: number;
+    }>(`/api/pptx/analyze`, { method: "POST", body: JSON.stringify(body) }),
 };
+
+export function pptxRefineMdSSE(
+  body: { md_path: string; template_pptx: string; output_pptx: string; user_hint?: string },
+  cb: {
+    onStart?: (issueCount: number) => void;
+    onChunk: (text: string) => void;
+    onDone: (suggestedMdPath: string) => void;
+    onError: (err: string) => void;
+  }
+): () => void {
+  const ctrl = new AbortController();
+  (async () => {
+    try {
+      const r = await fetch(`/api/pptx/refine-md`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      if (!r.body) throw new Error("no stream");
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() || "";
+        for (const p of parts) {
+          const lines = p.split("\n");
+          let event = "message";
+          let data = "";
+          for (const ln of lines) {
+            if (ln.startsWith("event:")) event = ln.slice(6).trim();
+            else if (ln.startsWith("data:")) data += ln.slice(5).trim();
+          }
+          if (event === "start") cb.onStart?.(Number(data));
+          else if (event === "done") cb.onDone(data);
+          else if (event === "error") cb.onError(data);
+          else cb.onChunk(data.replace(/\\n/g, "\n"));
+        }
+      }
+    } catch (e: any) {
+      cb.onError(e.message || String(e));
+    }
+  })();
+  return () => ctrl.abort();
+}
 export function draftMdSSE(
   body: {
     template_hwpx: string;

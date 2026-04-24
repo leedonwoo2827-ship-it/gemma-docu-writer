@@ -67,6 +67,87 @@ def _compute_order(doc: Document, plan: Plan) -> list[int]:
     return deduped
 
 
+def _apply_body_blocks(plan: Plan, catalog, doc: Document) -> dict:
+    """Heading section 별 body_blocks 를 해당 슬라이드의 body text shape 에 주입.
+
+    - 각 heading 은 plan.headings 에 대응 source_slide_idx 있음
+    - 같은 heading 의 body_blocks 들을 그 슬라이드의 비타이틀·비숏 shape 에 주입
+    - body 후보 shape: has_text_frame=True, 기존 텍스트 길이 > 30 or 아예 비었음,
+                      그리고 이미 title/subtitle/footer 로 예약된 슬롯 아님.
+    Returns: {matched: [...], unmapped: [...]}
+    """
+    from .editor import set_sp_text
+
+    heading_to_slide: dict[str, int] = {}
+    for hp in plan.headings:
+        heading_to_slide[hp.text] = hp.source_slide_idx
+
+    reserved_slot_ids: set[int] = set()
+    for asn in plan.titles:
+        try:
+            reserved_slot_ids.add(id(asn.slot))
+        except Exception:
+            pass
+
+    # 슬라이드별 body 후보 shape 순회 — 짧은(타이틀) 텍스트 제외
+    slide_body_candidates: dict[int, list] = {}
+    for slot in catalog.text_slots:
+        if id(slot) in reserved_slot_ids:
+            continue
+        txt = (slot.text or "").strip()
+        # 타이틀·레이블 같은 매우 짧은 shape 제외 (30자 이하는 heading 매핑용)
+        if 0 < len(txt) <= 30:
+            continue
+        slide_body_candidates.setdefault(slot.slide_idx, []).append(slot)
+
+    matched: list[dict] = []
+    unmapped: list[dict] = []
+
+    # heading 별 body_blocks 그룹
+    by_heading: dict[str, list] = {}
+    for bb in doc.body_blocks:
+        by_heading.setdefault(bb.heading, []).append(bb)
+
+    for heading, blocks in by_heading.items():
+        slide_idx = heading_to_slide.get(heading)
+        if slide_idx is None:
+            for bb in blocks:
+                unmapped.append({
+                    "heading": heading, "kind": bb.kind,
+                    "reason": "해당 heading 의 target slide 미식별",
+                    "excerpt": bb.text[:60],
+                })
+            continue
+        candidates = slide_body_candidates.get(slide_idx, [])
+        if not candidates:
+            for bb in blocks:
+                unmapped.append({
+                    "heading": heading, "kind": bb.kind, "slide": slide_idx,
+                    "reason": "슬라이드에 body 후보 shape 없음",
+                    "excerpt": bb.text[:60],
+                })
+            continue
+
+        # block 을 shape 하나씩 순서대로 채움 (shape 수 < block 수면 join 해서 한 shape 에)
+        # 단순: 전부 join 해서 첫 후보 shape 에 주입
+        joined = "\n\n".join(bb.text for bb in blocks)
+        first = candidates[0]
+        try:
+            set_sp_text(first.sp_elem, joined)
+            matched.append({
+                "heading": heading, "slide": slide_idx,
+                "block_count": len(blocks), "chars": len(joined),
+            })
+        except Exception as e:
+            unmapped.append({
+                "heading": heading, "slide": slide_idx,
+                "reason": f"주입 실패: {type(e).__name__}",
+                "excerpt": joined[:60],
+            })
+
+    return {"matched": matched, "unmapped": unmapped}
+
+
 def _apply_plan(plan: Plan, catalog, doc: Document) -> None:
     # Text assignments (title/subtitle/footer).
     for asn in plan.titles:
@@ -288,6 +369,8 @@ def convert(
             }
 
         _apply_plan(plan, catalog, doc)
+        # v6-2: body_blocks (prose / bullets / ordered) 주입
+        body_report = _apply_body_blocks(plan, catalog, doc)
         _write_slides(catalog.slide_trees, catalog.slide_paths)
 
         order = _compute_order(doc, plan)
@@ -321,6 +404,8 @@ def convert(
                 for t in plan.tables
             ],
             "tables_unmatched": plan.unmatched_tables,
+            "body_blocks_matched": body_report.get("matched", []),
+            "body_blocks_unmapped": body_report.get("unmapped", []),
             "plan_text": plan_text,
             "dry_run": False,
         }

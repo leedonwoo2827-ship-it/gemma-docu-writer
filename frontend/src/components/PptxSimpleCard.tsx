@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import PptxRefineModal from "./PptxRefineModal";
 
 type Props = {
   selectedMd: string | null;
@@ -36,6 +37,7 @@ export default function PptxSimpleCard({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [refineOpen, setRefineOpen] = useState(false);
 
   useEffect(() => { if (selectedMd) setMdPath(selectedMd); }, [selectedMd]);
   useEffect(() => { if (selectedPptx) setTplPath(selectedPptx); }, [selectedPptx]);
@@ -150,7 +152,33 @@ export default function PptxSimpleCard({
               📂 {result.output_path}
             </div>
           )}
+          {/* 🔧 MD 개선 제안 — dry_run 아닐 때만 */}
+          {!result.dry_run && result.output_path && mdPath && tplPath && (
+            <button
+              onClick={() => setRefineOpen(true)}
+              style={{ width: "100%", marginTop: 8, padding: "6px", fontSize: 12, background: "#8b5cf6", color: "#fff" }}
+            >
+              🔧 결과 분석하고 MD 개선 제안 받기
+            </button>
+          )}
         </div>
+      )}
+
+      {refineOpen && mdPath && tplPath && result?.output_path && (
+        <PptxRefineModal
+          mdPath={mdPath}
+          templatePptx={tplPath}
+          outputPptx={result.output_path}
+          convertResult={result}
+          onClose={() => setRefineOpen(false)}
+          onSaved={(suggestedPath) => {
+            onLog(`✓ 제안 MD 수락: ${suggestedPath}`);
+            onResult(suggestedPath, "개선된 MD (리파이너)");
+            onRefreshTree?.();
+            setMdPath(suggestedPath);   // 다음 변환 입력으로 자동 세팅
+          }}
+          onLog={onLog}
+        />
       )}
     </div>
   );
