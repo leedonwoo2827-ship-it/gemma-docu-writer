@@ -44,14 +44,28 @@ input, select, textarea {
 
 .layout {
   display: grid;
-  grid-template-columns: 260px 1fr 320px;
+  grid-template-columns: var(--left-w, 260px) 4px 1fr 4px var(--right-w, 320px);
   grid-template-rows: 36px 1fr 24px;
   grid-template-areas:
-    "topbar topbar topbar"
-    "left   center right"
-    "status status status";
+    "topbar  topbar  topbar  topbar  topbar"
+    "left    gutterL center  gutterR right"
+    "status  status  status  status  status";
   height: 100vh;
 }
+
+.gutter {
+  background: transparent;
+  cursor: col-resize;
+  user-select: none;
+  position: relative;
+  transition: background 120ms;
+}
+.gutter:hover,
+.gutter.dragging {
+  background: var(--accent);
+}
+.gutter.left { grid-area: gutterL; }
+.gutter.right { grid-area: gutterR; }
 
 .topbar {
   grid-area: topbar;

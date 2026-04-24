@@ -51,6 +51,15 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"hwpx" | "pptx">(
     () => (localStorage.getItem("activeTab") as "hwpx" | "pptx") || "hwpx"
   );
+  const [leftW, setLeftW] = useState<number>(() => {
+    const v = Number(localStorage.getItem("leftW"));
+    return Number.isFinite(v) && v >= 180 ? v : 260;
+  });
+  const [rightW, setRightW] = useState<number>(() => {
+    const v = Number(localStorage.getItem("rightW"));
+    return Number.isFinite(v) && v >= 180 ? v : 320;
+  });
+  const [dragging, setDragging] = useState<"left" | "right" | null>(null);
 
   useEffect(() => {
     if (styleRef) localStorage.setItem("styleRef", styleRef);
@@ -65,6 +74,29 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("activeTab", activeTab);
   }, [activeTab]);
+
+  useEffect(() => { localStorage.setItem("leftW", String(leftW)); }, [leftW]);
+  useEffect(() => { localStorage.setItem("rightW", String(rightW)); }, [rightW]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (dragging === "left") {
+        const w = Math.max(180, Math.min(600, e.clientX));
+        setLeftW(w);
+      } else {
+        const w = Math.max(180, Math.min(700, window.innerWidth - e.clientX));
+        setRightW(w);
+      }
+    };
+    const onUp = () => setDragging(null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging]);
 
   useEffect(() => {
     if (!workDir) return;
@@ -326,7 +358,10 @@ export default function App() {
   });
 
   return (
-    <div className="layout">
+    <div
+      className="layout"
+      style={{ ["--left-w" as any]: `${leftW}px`, ["--right-w" as any]: `${rightW}px` }}
+    >
       <div className="topbar">
         <div className="title">결과보고서 작성툴</div>
         <button style={tabButtonStyle("hwpx")} onClick={() => setActiveTab("hwpx")}>
@@ -464,12 +499,24 @@ export default function App() {
         )}
       </div>
 
+      <div
+        className={`gutter left ${dragging === "left" ? "dragging" : ""}`}
+        onMouseDown={() => setDragging("left")}
+        title="드래그로 좌측 패널 폭 조절"
+      />
+
       <div className="center">
         <CenterPane
           mdPath={selected?.toLowerCase().endsWith(".md") ? selected : null}
           onConvert={(out) => convertHwpx(appendTimestamp(out))}
         />
       </div>
+
+      <div
+        className={`gutter right ${dragging === "right" ? "dragging" : ""}`}
+        onMouseDown={() => setDragging("right")}
+        title="드래그로 우측 패널 폭 조절"
+      />
 
       <div className="right">
         <RightSidebar logs={logs} streamBuf={streamBuf} results={results} onClear={() => setLogs([])} />
