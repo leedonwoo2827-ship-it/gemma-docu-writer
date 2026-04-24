@@ -17,7 +17,7 @@ for _stream in ("stdout", "stderr"):
 
 from . import __version__
 from .editor import fill_table, set_sp_text
-from .mapper import Plan, _find_section_exemplar, _find_title_slot_on_slide, build_plan, format_plan
+from .mapper import Plan, TABLE_MATCH_THRESHOLD, _find_section_exemplar, _find_title_slot_on_slide, _headers_score, build_plan, format_plan
 from .md_parser import Document, parse_md
 from .pack import pack, unpack
 from .qa import run_placeholder_check, run_visual_export
@@ -338,6 +338,26 @@ def convert(
                 else:
                     new_idx = duplicate_slide(work, exemplar)
                     heading_slide_indices.append(new_idx)
+
+        # v6.1: 여러 MD 표가 같은 양식 표 슬롯에 매칭될 때 자동 복제
+        # (리파이너가 긴 표를 여러 개로 쪼개도 엔진이 슬롯을 늘려 모두 수용)
+        mid_catalog = scan_unpacked(work)
+        slot_demand: dict[int, int] = {}   # template table slide_idx → 이 슬롯을 원하는 MD 표 개수
+        for md_table in doc.tables:
+            best_idx = -1
+            best_score = 0.0
+            for slot in mid_catalog.table_slots:
+                s = _headers_score(md_table.headers, slot.headers)
+                if s > best_score:
+                    best_score = s
+                    best_idx = slot.slide_idx
+            if best_idx >= 0 and best_score >= TABLE_MATCH_THRESHOLD:
+                slot_demand[best_idx] = slot_demand.get(best_idx, 0) + 1
+
+        for src_slide_idx, demand in slot_demand.items():
+            if demand > 1:
+                for _ in range(demand - 1):
+                    duplicate_slide(work, src_slide_idx)
 
         catalog = scan_unpacked(work)
         plan = build_plan(doc, catalog)
