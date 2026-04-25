@@ -14,7 +14,15 @@ export default function StyleFormatPanel({ stylePath, active, fresh, onClear, on
   const tagClass = isHwpx ? "ext-hwpx" : "";
   const tagLabel = isHwpx ? "hwpx" : "?";
   return (
-    <div className="panel-section" style={{ borderTop: "2px solid #d4a23a", opacity: stylePath && !fresh ? 0.45 : 1 }}>
+    <div
+      className="panel-section"
+      style={{
+        borderTop: "3px solid #d4a23a",
+        borderBottom: "3px solid #d4a23a",
+        background: "rgba(212, 162, 58, 0.07)",
+        opacity: stylePath && !fresh ? 0.55 : 1,
+      }}
+    >
       <div className="panel-section-title" style={{ color: "#d4a23a" }}>
         📐 양식 문서 (디자인 주입)
         {stylePath && (

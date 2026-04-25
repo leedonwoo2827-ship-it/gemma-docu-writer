@@ -15,7 +15,15 @@ export default function InjectTargetPanel({ templateHwpx, active, fresh, onClear
   const tagLabel = isHwpx ? "hwpx" : "?";
   const title = "🎯 주입 문서 (템플릿 HWPX)";
   return (
-    <div className="panel-section" style={{ borderTop: "2px solid var(--accent)", opacity: templateHwpx && !fresh ? 0.45 : 1 }}>
+    <div
+      className="panel-section"
+      style={{
+        borderTop: "3px solid var(--accent)",
+        borderBottom: "3px solid var(--accent)",
+        background: "rgba(86, 156, 214, 0.07)",
+        opacity: templateHwpx && !fresh ? 0.55 : 1,
+      }}
+    >
       <div className="panel-section-title" style={{ color: "var(--accent)" }}>
         {title}
         {templateHwpx && (
