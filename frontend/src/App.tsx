@@ -17,14 +17,6 @@ function timestamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
-function appendTimestamp(path: string): string {
-  const m = path.match(/^(.*?)(\.[^.\\/]+)?$/);
-  if (!m) return `${path}_${timestamp()}`;
-  const base = m[1] ?? path;
-  const ext = m[2] ?? "";
-  return `${base}_${timestamp()}${ext}`;
-}
-
 export default function App() {
   const [workDir, setWorkDir] = useState<string>(() => localStorage.getItem("workDir") || DEFAULT_ROOT);
   const [selected, setSelected] = useState<string | null>(null);
@@ -567,7 +559,6 @@ export default function App() {
       <div className="center">
         <CenterPane
           mdPath={selected?.toLowerCase().endsWith(".md") ? selected : null}
-          onConvert={(out) => convertHwpx(appendTimestamp(out))}
         />
       </div>
 
