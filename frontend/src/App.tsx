@@ -507,6 +507,29 @@ export default function App() {
             ⟳
           </button>
         </div>
+        {/* 주입 문서: 탐색기 위 — 📝 MD 합성 단계와 시각적 결합 */}
+        {activeTab === "hwpx" && (
+          <InjectTargetPanel
+            templateHwpx={styleRef}
+            active={selected === styleRef}
+            fresh={styleRefFresh}
+            onClear={() => {
+              setStyleRef(null);
+              setStyleRefFresh(false);
+              log("글쓰기 주입 문서 해제됨");
+            }}
+            onSelect={() => {
+              if (styleRef) {
+                setSelected(styleRef);
+                setSelectedExt(".hwpx");
+              }
+            }}
+            onReapply={() => {
+              setStyleRefFresh(true);
+              log(`주입 문서 재적용: ${styleRef?.split(/[\\/]/).pop()}`);
+            }}
+          />
+        )}
         <FileExplorer
           tree={tree}
           err={treeErr}
@@ -532,49 +555,28 @@ export default function App() {
             }
           }}
         />
+        {/* 양식 문서: 탐색기 아래 — 🎯 HWPX 생성 단계와 시각적 결합 */}
         {activeTab === "hwpx" && (
-          <>
-            <InjectTargetPanel
-              templateHwpx={styleRef}
-              active={selected === styleRef}
-              fresh={styleRefFresh}
-              onClear={() => {
-                setStyleRef(null);
-                setStyleRefFresh(false);
-                log("글쓰기 주입 문서 해제됨");
-              }}
-              onSelect={() => {
-                if (styleRef) {
-                  setSelected(styleRef);
-                  setSelectedExt(".hwpx");
-                }
-              }}
-              onReapply={() => {
-                setStyleRefFresh(true);
-                log(`주입 문서 재적용: ${styleRef?.split(/[\\/]/).pop()}`);
-              }}
-            />
-            <StyleFormatPanel
-              stylePath={formatRef}
-              active={selected === formatRef}
-              fresh={formatRefFresh}
-              onClear={() => {
-                setFormatRef(null);
-                setFormatRefFresh(false);
-                log("양식 문서 해제됨");
-              }}
-              onSelect={() => {
-                if (formatRef) {
-                  setSelected(formatRef);
-                  setSelectedExt(".hwpx");
-                }
-              }}
-              onReapply={() => {
-                setFormatRefFresh(true);
-                log(`양식 문서 재적용: ${formatRef?.split(/[\\/]/).pop()}`);
-              }}
-            />
-          </>
+          <StyleFormatPanel
+            stylePath={formatRef}
+            active={selected === formatRef}
+            fresh={formatRefFresh}
+            onClear={() => {
+              setFormatRef(null);
+              setFormatRefFresh(false);
+              log("양식 문서 해제됨");
+            }}
+            onSelect={() => {
+              if (formatRef) {
+                setSelected(formatRef);
+                setSelectedExt(".hwpx");
+              }
+            }}
+            onReapply={() => {
+              setFormatRefFresh(true);
+              log(`양식 문서 재적용: ${formatRef?.split(/[\\/]/).pop()}`);
+            }}
+          />
         )}
         {activeTab === "pptx" && (
           <PptxSimpleCard
