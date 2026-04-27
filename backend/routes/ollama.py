@@ -33,6 +33,51 @@ def ollama_health() -> dict[str, Any]:
     }
 
 
+@router.post("/ollama/start")
+def ollama_start() -> dict[str, Any]:
+    """Ollama 서비스가 꺼져있으면 백그라운드로 시작한다 (Windows 우선).
+    이미 켜져있으면 noop. 시작 후 짧게 대기하며 health 재확인.
+    """
+    import subprocess
+    import sys
+    import time as _time
+
+    if health():
+        return {"ok": True, "already_running": True}
+
+    try:
+        if sys.platform == "win32":
+            # DETACHED_PROCESS = 0x00000008 — 부모 종료해도 살아남음
+            DETACHED = 0x00000008
+            CREATE_NO_WINDOW = 0x08000000
+            subprocess.Popen(
+                ["ollama", "serve"],
+                creationflags=DETACHED | CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        else:
+            subprocess.Popen(
+                ["ollama", "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+    except FileNotFoundError:
+        return {"ok": False, "error": "ollama 명령을 찾을 수 없습니다. https://ollama.com 에서 설치 후 PATH 확인."}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    # 시작 대기 — 최대 5초
+    for _ in range(10):
+        _time.sleep(0.5)
+        if health():
+            return {"ok": True, "started": True}
+
+    return {"ok": False, "error": "Ollama 시작했으나 5초 내 응답 없음. 직접 'ollama serve' 실행 권장."}
+
+
 class ConfigBody(BaseModel):
     provider: str = "ollama"
     gemini_api_key: str = ""

@@ -163,6 +163,30 @@ export default function SettingsModal({ onClose, workDir, setWorkDir }: Props) {
                 ) : (
                   <span className="badge off">오프라인</span>
                 )}
+                {!health?.ok && (
+                  <button
+                    style={{ padding: "2px 8px", fontSize: 11, background: "#16a34a", color: "#fff" }}
+                    onClick={async () => {
+                      try {
+                        const r = await api.ollamaStart();
+                        if (r.ok) {
+                          api.ollamaHealth().then(setHealth);
+                          setTestResult({
+                            ok: true,
+                            msg: r.already_running ? "✓ 이미 켜져있음" : "✓ 시작됨"
+                          });
+                        } else {
+                          setTestResult({ ok: false, msg: `✗ ${r.error || "실패"}` });
+                        }
+                      } catch (e: any) {
+                        setTestResult({ ok: false, msg: `✗ ${e.message || String(e)}` });
+                      }
+                    }}
+                    title="ollama serve 백그라운드 실행"
+                  >
+                    🚀 시작
+                  </button>
+                )}
                 <button
                   style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 11 }}
                   onClick={() => api.ollamaHealth().then(setHealth).catch(() => setHealth({ ok: false }))}
@@ -172,6 +196,11 @@ export default function SettingsModal({ onClose, workDir, setWorkDir }: Props) {
               </label>
               <div style={{ fontSize: 11, color: "var(--fg-dim)" }}>
                 설치된 모델: {installedModels.join(", ") || "없음"}
+                {!health?.ok && (
+                  <span style={{ marginLeft: 4, fontStyle: "italic" }}>
+                    (Ollama 꺼져서 모델 리스트 못 가져옴)
+                  </span>
+                )}
               </div>
             </div>
 

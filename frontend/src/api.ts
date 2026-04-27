@@ -113,6 +113,11 @@ export const api = {
     j<{ ok: boolean; models: string[]; installed_models: string[]; has_gemma_e4b: boolean; has_gemma_e2b: boolean }>(
       `/api/ollama/health`
     ),
+  ollamaStart: () =>
+    j<{ ok: boolean; already_running?: boolean; started?: boolean; error?: string }>(
+      `/api/ollama/start`,
+      { method: "POST", body: JSON.stringify({}) }
+    ),
   getConfig: () => j<any>(`/api/config`),
   setConfig: (cfg: any) =>
     j<{ ok: boolean }>(`/api/config`, { method: "POST", body: JSON.stringify(cfg) }),
